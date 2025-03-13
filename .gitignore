@@ -47,3 +47,12 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Ignore all data files (except metadata)
+data/
+!data/metadata.json
+
+# Ignore OneDrive cache files
+.DS_Store
+*.tmp
+*.log
