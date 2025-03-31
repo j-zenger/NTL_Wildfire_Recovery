@@ -1,0 +1,168 @@
+---
+title: "Data Processing"
+author: "Me"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# Load packages
+library(blackmarbler)
+library(geodata)
+library(sf)
+library(terra)
+library(ggplot2)
+library(tidyterra)
+library(lubridate)
+library(dplyr)
+library(tmap)
+library(raster)
+library(rnaturalearth)
+library(jsonlite)
+library(dplyr)
+library(tools)
+library(utils)
+library(plotly)
+
+
+config <- fromJSON("~/Local/Dissertation/NTL_Wildfire_Recovery/data_config.json")
+print(config$data_path)
+
+thomas_csv <- read.csv("~/Local/Dissertation/ThomasFire_Year_DailyMeanLuminosity (1).csv")
+buffer_csv <- read.csv("~/Local/Dissertation/Buffer_Year_DailyMeanLuminosity.csv")
+
+# Load satellite data
+thomas_outputs <- list.files("~/Local/Dissertation/ThomasFireYear_TIFFs", full.names = TRUE)
+
+# Load satellite data
+thomas_data <- lapply(thomas_outputs, rast)
+
+buffer_outputs <- list.files("~/Local/Dissertation/Buffer_TIFFs", full.names = TRUE)
+buffer_data <- lapply(buffer_outputs, rast)
+
+```
+
+```{r}
+# Name the output rasters in satellite data based on the file names 
+# Extract file names without extension and path
+file_names <- tools::file_path_sans_ext(basename(thomas_outputs))
+
+# Name the list elements using extracted file names
+names(thomas_data) <- file_names
+
+# Check the names
+print(names(thomas_data))
+
+# Get rid of the ThomasFire_ prefix
+names(thomas_data) <- gsub("ThomasFire_", "", names(thomas_data))
+
+# Check structure
+str(thomas_csv)
+
+# Preview first few rows
+head(thomas_csv)
+
+# Merge rasters with their corresponding metadata
+combined_data <- lapply(names(thomas_data), function(name) {
+  list(
+    raster = thomas_data[[name]],
+    metadata = thomas_csv %>% filter(system.index == name)
+  )
+})
+
+# Assign names to the combined list
+names(combined_data) <- names(thomas_data)
+
+# Check merged structure
+summary(combined_data)
+plot(combined_data[[2]]$raster)
+
+```
+
+```{r pressure, echo=FALSE}
+
+# Load necessary libraries
+library(dplyr)
+library(plotly)
+
+# Optional: View first few rows of buffer_csv to inspect data
+print(head(buffer_csv))
+
+# Filter data based on Mandatory_Quality_Flag condition
+thomas_csv <- thomas_csv %>% 
+  filter(Mandatory_Quality_Flag <= 0.05 | is.na(Mandatory_Quality_Flag))
+
+buffer_csv <- buffer_csv %>%
+  filter(Mandatory_Quality_Flag <= 0.05 | is.na(Mandatory_Quality_Flag))
+
+# Convert date columns to Date type
+thomas_csv$date <- as.Date(thomas_csv$date)
+buffer_csv$date <- as.Date(buffer_csv$date)
+
+# Remove rows with NA or non-finite values
+clean_data <- thomas_csv %>% 
+  thomas_csv$date <- as.Date(thomas_csv$date)
+  filter(!is.na(date) & is.finite(date))
+
+
+thomas_csv <- thomas_csv %>% 
+  filter(!is.na(date) & is.finite(date))
+
+str(thomas_csv)
+# Plot mean luminosity as a smoothed trendline
+ggplot(thomas_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, group = 1)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Smooth Trend Line of NTL Data",
+       x = "Date",
+       y = "NTL Value")
+
+
+buffer_csv$date <- as.Date(buffer_csv$date)
+buffer_csv <- buffer_csv %>% 
+  filter(!is.na(date) & is.finite(date))
+
+# Plot mean luminosity as a smoothed trendline
+ggplot(thomas_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, group = 1)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Smooth Trend Line of NTL Data",
+       x = "Date",
+       y = "NTL Value")
+
+
+# Combine the two dataframes
+combined_csv <- bind_rows(thomas_csv, buffer_csv)
+
+# Plot the trendlines from both datasets
+ggplot(combined_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
+  geom_line() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+       x = "Date",
+       y = "NTL Value") +
+  scale_color_manual(values = c("blue", "red"))  # Optional: Set custom colors for the lines
+
+
+
+
+
+
+```
+```{r}
+
+```
+```{r}
+# Plot the data
+

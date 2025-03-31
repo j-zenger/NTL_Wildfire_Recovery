@@ -38,9 +38,9 @@ roi1 <- st_as_sfc(sb_ventura_bbox)
 ```
 
 ```{r cars}
-# Load Thomas Fire shapefile and buffer
+# Load Thomas Fire shapefile 
 # Create date vector
-date_vector <- seq(from = as.Date("2017-11-15"), to = as.Date("2018-12-31"), by = "day")
+date_vector <- seq(from = as.Date("2017-11-29"), to = as.Date("2018-01-02"), by = "day")
 
 # Load Thomas Fire shapefile
 calfire_sf <- "https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Historic_Fire_Perimeters/FeatureServer/2/query?where=1%3D1&outFields=*&outSR=4326&f=json"
@@ -48,13 +48,22 @@ calfire_sf <- "https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/service
 roi <- st_read(calfire_sf)
 
 # Filter to Thomas Fire
-roi_sf <- roi %>% filter(OBJECTID == 2655)  # Ensure OBJECTID is numeric
+roi_sf <- roi %>% filter(OBJECTID == 2655)  # Thomas Fire shapefile 
 
+swdir <- "~/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/wildfire_recovery_ntl_data/raw"
+
+(st_write(roi_sf, "thomas_fire.shp", append = FALSE))
+(plot(st_geometry(roi_sf)))
+
+```
+
+```{r}
+# Create a buffer around the fire perimeter and clip it to the coastline
 # Load coastline data
 coastline <- ne_countries(scale = "medium", returnclass = "sf")  # Land boundaries
 
 # Function to create buffer and clip at coastline
-buffer_sf <- function(roi_sf, coastline, buffer_km = 5) {
+buffer_sf <- function(roi_sf, coastline, buffer_km = 10) {
   if (nrow(roi_sf) == 0) {
     stop("No matching fire perimeter found.")
   }
@@ -62,14 +71,40 @@ buffer_sf <- function(roi_sf, coastline, buffer_km = 5) {
   # Create buffer around the fire perimeter
   fire_buffer_sf <- st_buffer(roi_sf, dist = buffer_km * 1000)  # Convert km to meters
   
+  # Remove the fire perimeter from the buffer
+  fire_overlap <- st_difference(fire_buffer_sf, roi_sf)
+  
   # Clip buffer to land area (remove ocean parts)
-  fire_buffer_clipped <- st_intersection(fire_buffer_sf, coastline)
+  fire_buffer_clipped <- st_intersection(fire_overlap, coastline)
   
   return(fire_buffer_clipped)
 }
 
+
+# Load necessary package
+library(sf)
+
+# Ensure the output directory exists
+output_dir <- "~/Local/Dissertation"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)  # Create directory if it doesn't exist
+}
+
 # Generate clipped buffer
-fire_buffer_sf <- buffer_sf(roi_sf, coastline, buffer_km = 5)
+fire_buffer_sf <- buffer_sf(roi_sf, coastline, buffer_km = 10)
+
+# Keep only geometry to avoid field name issues
+fire_buffer_sf <- fire_buffer_sf %>% select(geometry)
+
+# Define the full path without specifying the file name (Shapefile creates multiple files)
+shapefile_name <- "clipped_fire_buffer"
+shapefile_path <- file.path(output_dir, shapefile_name)
+
+# Save as a Shapefile
+st_write(fire_buffer_sf, dsn = shapefile_path, driver = "ESRI Shapefile", append = FALSE)
+
+print(paste("Shapefile successfully saved to:", shapefile_path))
+
 
 # Plot using tmap
 tmap_mode("view")  # Switch to interactive mode (use "plot" for static)
@@ -81,54 +116,200 @@ tm_shape(fire_buffer_sf) +
   tm_basemap("OpenStreetMap") + 
   tm_layout(title = "Thomas Fire Perimeter and Clipped Buffer")
 
+```
+
+
+```{r}
+process_satellite_images <- function(roi_sf, date_vector, bearer, swdir) {
+  
+  results <- tibble(
+    satellite = character(),
+    date = as.Date(character()),
+    mean_luminosity = numeric(),
+    raster_path = character(),
+    smoothed_radiance = list(),
+    quality_flag_rm = numeric()
+  )
+  
+  for (date in date_vector) {
+    date <- as.Date(date)  # Ensure it's a Date object
+    date_str <- format(date, "%Y-%m-%d")  # Format date
+    
+
+# Retry function to handle timeouts
+    retry_fetch <- function(attempts = 3) {
+      for (i in 1:attempts) {
+        a2_raster <- tryCatch({
+          bm_raster(
+            roi_sf = roi_sf, 
+            product_id = "VNP46A2", 
+            date = date_vector,  # FIXED: Pass a single date
+            bearer = bearer, 
+            aggregation_fun = c("mean"),
+            add_n_pixels = TRUE,
+            quality_flag_rm = NULL, 
+            check_all_tiles_exist = FALSE,
+            output_location_type = "file", 
+            file_dir = swdir,  
+            file_prefix = NULL,
+            file_skip_if_exists = TRUE,
+            file_return_null = FALSE
+          )
+        }, error = function(e) {
+          message(paste("Attempt", i, "failed for", date_str, "- Retrying..."))
+          return(NULL)
+        })
+
+        if (!is.null(a2_raster)) return(a2_raster)
+        Sys.sleep(3)  # Small delay before retrying
+      }
+      return(NULL)  # Return NULL if all retries fail
+    }
+
+    # Attempt to download with retries
+    a2_raster <- retry_fetch()
+
+    if (is.null(a2_raster)) {
+      message(paste("Skipping", date_str, "- VNP46A2 data not available."))
+      next  # Skip this date and continue the loop
+    }
+
+    # Process raster function
+    process_raster <- function(r, sat_type, date) {
+      if (!is.null(r)) {
+        r <- terra::mask(r, roi_sf)  # Mask raster to region of interest
+        r[] <- log(r[] + 1)  # Log-transform to reduce skewness
+        mean_lum <- mean(r[], na.rm = TRUE)  # Compute mean luminosity
+        raster_filename <- file.path(swdir, paste0(sat_type, "_", date, ".tif"))
+        terra::writeRaster(r, raster_filename, overwrite = TRUE)  # Save raster
+        return(list(mean_lum, raster_filename))
+      } else {
+        return(list(NA, NA))
+      }
+    }
+
+    # Process and store results
+    a2_results <- process_raster(a2_raster, "A2", date_str)
+    
+    results <- results %>%
+      add_row(
+        satellite = "VNP46A2", 
+        date = as.Date(date_str),
+        mean_luminosity = a2_results[[1]], 
+        raster_path = a2_results[[2]]
+      )
+  }
+
+  return(results)
+}
+```
+
+
+```{r}
+# Load the RDS file
+rds_path <- "~/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/wildfire_recovery_ntl_data/raw/VNP46A2_Gap_Filled_DNB_BRDF-Corrected_NTL_qflag_mean_t2017_12_23.Rds"
+rds_data <- readRDS(rds_path)
+
+# Check the structure of the loaded object
+print(str(df))
+print(names(df))  # To check if it's a raster or a dataframe
+
+print(str(readRDS(rds_path), max.level = 2))
+
+
 
 ```
 
 ```{r}
 
-# Download VNP46A2 (Nighttime Light Radiance, QF Cloud Mask, Mandatory Quality Flag)
-a2_20171203 <- bm_raster(roi_sf = roi_sf,
-                        product_id = "VNP46A2",
-                        date = "2017-12-03",
-                        bearer = bearer)
+process_satellite_images <- function(roi_sf, date_vector, bearer, swdir) {
+  
+  results <- tibble(
+    satellite = character(),
+    date = as.Date(character()),
+    mean_luminosity = numeric(),
+    raster_path = character(),
+    smoothed_radiance = list(),
+    quality_flag_rm = numeric()
+  )
+  
+  for (date in date_vector) {
+    date <- as.Date(date)  # Ensure it's a Date object
+    date_str <- format(date, "%Y-%m-%d")  # Format date
+    
+    # Attempt to download VNP46A2 (Nighttime Light Radiance)
+    a2_raster <- tryCatch({
+      bm_raster(
+        roi_sf = roi_sf, 
+        product_id = "VNP46A2", 
+        date = date_vector,  
+        bearer = bearer, 
+        aggregation_fun = c("mean"),
+        add_n_pixels = TRUE,
+        quality_flag_rm = NULL, 
+        check_all_tiles_exist = FALSE,
+        output_location_type = "file", 
+        file_dir = swdir,  # FIXED: Changed from swdir
+        file_prefix = NULL,
+        file_skip_if_exists = TRUE,
+        file_return_null = FALSE
+      )
+    }, error = function(e) {
+      message(paste("Skipping", date_str, "- VNP46A2 data not available."))
+      return(NULL)
+    })
+    
+    # Function to process raster, save it, and generate tmap plot
+    process_raster <- function(r, sat_type, date) {
+      if (!is.null(r)) {
+        r <- terra::mask(r, roi_sf)  # Mask raster to region of interest
+        
+        r[] <- log(r[] + 1)  # Log-transform to reduce skewness
+        
+        mean_lum <- mean(r[], na.rm = TRUE)  # Compute mean luminosity
+        
+        raster_filename <- file.path(swdir, paste0(sat_type, "_", date, ".tif"))
+        terra::writeRaster(r, raster_filename, overwrite = TRUE)  # Save raster as GeoTIFF
+        
+        return(list(mean_lum, raster_filename, smoothed_radiance, quality_flag_rm))
+      } else {
+        return(list(NA, NA, NA, NA))
+      }
+    }
+    
+    # Process and store results (only if imagery is available)
+    if (!is.null(a2_raster)) {
+  a2_results <- process_raster(a2_raster, "A2", date_str)
+  
+  results <- results %>%
+    add_row(
+      satellite = "VNP46A2", 
+      date = as.Date(date_str),
+      mean_luminosity = a2_results[[1]], 
+      raster_path = a2_results[[2]],
+      quality_flag_rm = a2_results[[3]]
+    )
+  }
+  
+  return(results)
+  }
+}
 
-# Download VNP46A1 (Viewing Zenith Angle, Solar Zenith Angle, Moon Illumination Fraction)
-a1_20171203 <- bm_raster(roi_sf = roi_sf,
-                        product_id = "VNP46A1",
-                        date = "2017-12-03",
-                        bearer = bearer)
+# Process satellite images
+satellite_results <- process_satellite_images(roi_sf, date_vector, bearer, swdir)
 
+```
+```{r}
+
+# smoothed_radiance <- terra::focal(r, w = matrix(1, 3, 3), fun = mean, na.rm = TRUE)  # FIXED: Use terra::focal
 
 ```
 
-```{r cars}
-
-#### Prep data
-r <- r |> terra::mask(roi_sf)
-
-## Distribution is skewed, so log
-r[] <- log(r[] + 1)
-
-##### Map
-ggplot() +
-  geom_spatraster(data = r) +
-  scale_fill_gradient2(low = "black",
-                       mid = "yellow",
-                       high = "red",
-                       midpoint = 4.5,
-                       na.value = "transparent") +
-  labs(title = "Nighttime Lights before Thomas Fire") +
-  coord_sf() +
-  theme_void() +
-  theme(plot.title = element_text(face = "bold", hjust = 0.5),
-  legend.position = "none")
-
-
-```
 
 ```{r}
+# Download satellite imagery for buffer around Thomas Fire shapefile
 # Define function
-process_satellite_images <- function(roi_sf, date_vector, bearer, save_dir = "satellite_outputs") {
+process_buffer_images <- function(roi_sf, date_vector, bearer, save_dir = "satellite_outputs") {
   
   # Create directory if it doesn't exist
   if (!dir.exists(save_dir)) {
@@ -219,24 +400,52 @@ process_satellite_images <- function(roi_sf, date_vector, bearer, save_dir = "sa
 tmap_mode("view")
 
 # Process satellite images
-satellite_results <- process_satellite_images(roi_sf, date_vector, bearer)
+buffer_results <- process_buffer_images(roi_sf, date_vector, bearer)
 
 # View results
-print(satellite_results)
+print(buffer_results)
 
+# Create csv of buffer data and save in OneDrive 
+write.csv(buffer_results, "~/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/wildfire_recovery_ntl_data/raw/buffer_results.csv", row.names = FALSE)
 
 
 
 
 ```
 
+```{r}
+
+reticulate::conda_create("rgee_py")
+reticulate::conda_install("rgee_py", packages = c("earthengine-api", "numpy"))
+reticulate::conda_install("rgee_py", packages = "earthengine-api")
+reticulate::py_config()
+reticulate::use_condaenv("rgee_py", required = TRUE)
+
+rgee::ee_check()
+rgee::ee_Initialize(project = "ee-josephine")
+rgee::ee_clean_user_credentials()
+reticulate::py_install("earthengine-api>=0.1.317", envname = "rgee_py")
+rgee::ee_Authenticate()
+
+rgee::ee_Initialize(project = "ee-josephinezenger")
+
+```
+
+```{r}
+
+thomas_fire <- ee$FeatureCollection("users/josiezenger/thomas_fire")
+
+ee_clean_user_credentials()
+```
+
+
 
 
 ```{r}
 # plot raster
 r <- bm_raster(roi_sf = roi_sf,
-               product_id = "VNP46A3",
-               date = date6,
+               product_id = "VNP46A2",
+               date = "2017-11-17",
                bearer = bearer)
 
 #### Prep data
@@ -262,31 +471,7 @@ ggplot() +
 # CHECK QUALITY FLAGS
 
 ##########
-# plot raster
-r <- bm_raster(roi_sf = roi_sf,
-               product_id = "VNP46A2",
-               date = date4,
-               bearer = bearer)
 
-#### Prep data
-r <- r |> terra::mask(roi_sf)
-
-## Distribution is skewed, so log
-r[] <- log(r[] + 1)
-
-##### Map
-ggplot() +
-  geom_spatraster(data = r) +
-  scale_fill_gradient2(low = "black",
-                       mid = "yellow",
-                       high = "red",
-                       midpoint = 4.5,
-                       na.value = "transparent") +
-  labs(title = "Nighttime Lights before Thomas Fire") +
-  coord_sf() +
-  theme_void() +
-  theme(plot.title = element_text(face = "bold", hjust = 0.5),
-  legend.position = "none")
 ```
 
 ```{r}
