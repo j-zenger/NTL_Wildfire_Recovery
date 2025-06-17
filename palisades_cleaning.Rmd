@@ -85,10 +85,10 @@ plot(p.combined_data[[121]]$raster)
 ```{r Camp Fire Data}
 
 # Load satellite data
-camp_outputs <- list.files("~/Downloads/Camp_TIFFs", full.names = TRUE)
+camp_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
 
 # Load in the camp fire csv
-camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
+camp_csv <- read.csv("~/Local/Dissertation/NTl_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
 
 # Load satellite data
 camp_data <- lapply(camp_outputs, rast)
@@ -214,7 +214,7 @@ ggplot(f.camp_weekly, aes(x = week, y = mean_NTL)) +
 ```{r Camp Fire plotted}
 
 # Load in the camp fire csv
-cbuff_csv <- read.csv("~/Local/Dissertation/CBuff_DailyMeanLuminosity.csv")
+cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
 
 # Filter data based on Mandatory_Quality_Flag condition
 f.cbuff_csv <- cbuff_csv %>% 
@@ -315,15 +315,6 @@ f.camp_weeks_before <- c.combined_weekly %>%
 
 # Plot the trendlines from both datasets
 
-# Plot the trendlines from both datasets
-ggplot(f.camp_date_before, aes(x = week, y = mean_NTL, color = source, group = source)) +
-  geom_line() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
-       x = "Date",
-       y = "NTL Value") +
-  scale_color_manual(values = c("blue4", "green4")) 
-
 # On a day scale
 f.camp_days_before <- c.combined_csv %>%
   filter(date < as.Date("2018-11-08"))
@@ -339,7 +330,8 @@ ggplot(f.camp_days_before, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, 
 
 # plot the days and weeks after the fire 
 f.camp_days_after <- c.combined_csv %>%
-  filter(date >= as.Date("2018-11-08"))
+  filter(date >= as.Date("2019-01-07"))
+
 
 # Plot the trendlines from both datasets
 ggplot(f.camp_days_after, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
@@ -353,7 +345,7 @@ ggplot(f.camp_days_after, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, c
 
 # plot the weeks after the fire
 f.camp_weeks_after <- c.combined_weekly %>%
-  filter(week >= as.Date("2018-11-08"))
+  filter(week >= as.Date("2019-01-07"))
 
 # Plot the trendlines from both datasets
 ggplot(f.camp_weeks_after, aes(x = week, y = mean_NTL, color = source, group = source)) +
@@ -366,9 +358,49 @@ ggplot(f.camp_weeks_after, aes(x = week, y = mean_NTL, color = source, group = s
   scale_color_manual(values = c("blue4", "green4"))
 
 
-```
-```{r}
 
+```
+
+
+```{r}
+# make a difference in camp and buffer plot 
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Step 1: Compute the date gap to adjust post-fire dates
+end_before <- max(ntl_diff_data$date[ntl_diff_data$date < as.Date("2018-11-09")])
+start_after <- min(ntl_diff_data$date[ntl_diff_data$date >= as.Date("2019-01-07")])
+gap <- as.numeric(start_after - end_before) - 1  # to close the visual gap
+
+# Step 2: Adjust dates for visual continuity
+f.before <- ntl_diff_data %>%
+  filter(date < as.Date("2018-11-09")) %>%
+  mutate(date_adjusted = date)
+
+f.after <- ntl_diff_data %>%
+  filter(date >= as.Date("2019-01-07")) %>%
+  mutate(date_adjusted = date - gap)
+
+f.all_adjusted <- bind_rows(f.before, f.after)
+
+# Step 3: Add dashed line at visual break point
+break_adjusted <- max(f.before$date_adjusted) + 1
+
+# Step 4: Plot
+ggplot(f.all_adjusted, aes(x = date_adjusted, y = NTL_diff)) +
+  geom_line(color = "lightgrey") +
+  geom_vline(xintercept = as.numeric(break_adjusted), linetype = "dashed", color = "red") +
+  annotate("text", x = break_adjusted + 2, y = max(f.all_adjusted$NTL_diff, na.rm = TRUE),
+           label = "Camp Fire\nNov 9–Jan 6 excluded", color = "red", hjust = 0) +
+  labs(
+    title = "Difference in NTL (Camp - Buffer) Before and After Camp Fire",
+    x = "Date (Adjusted)",
+    y = "NTL Difference"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
 
