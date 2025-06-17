@@ -287,7 +287,7 @@ ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = so
 
 # Create an indicator for exclusion period
 c.combined_weekly <- c.combined_weekly %>%
-  mutate(exclude_dates = week >= as.Date("2018-11-07") & week <= as.Date("2018-11-29"))
+  mutate(exclude_dates = week >= as.Date("2018-11-07") & week <= as.Date("2019-01-07"))
 
 # Plot: points for all data, smoothed lines only for non-excluded dates
 ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = source)) +
@@ -297,7 +297,7 @@ ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = so
     method = "loess", se = FALSE
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Broken Trend Line of NTL Data (Excluding Nov 7–29 from LOESS)",
+  labs(title = "Broken Trend Line of NTL Data (Excluding Nov 7– Jan 7 from LOESS)",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4")) +
@@ -323,7 +323,7 @@ f.camp_days_before <- c.combined_csv %>%
 ggplot(f.camp_days_before, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
   geom_line() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+  labs(title = "Smooth Trend Line of Before-Fire NTL Data (Comparison)",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4")) 

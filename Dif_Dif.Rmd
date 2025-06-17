@@ -30,10 +30,10 @@ library(did)
 library(purrr)
 library(fect)
 
-camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
+camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
 
 # Load in the camp fire csv
-df <- read.csv("~/Local/Dissertation/ccombined.csv")
+df <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/ccombined.csv")
 
 ```
 
@@ -47,13 +47,13 @@ library(tibble)
 
 # Load raster file paths
 camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
-new_outputs <- list.files("~/Local/Dissertation/CampFire_2_TIFFs", full.names = TRUE)
+new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
 cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
-cb.new_outputs <- list.files("~/Local/Dissertation/CBuff_2_tiffs", full.names = TRUE)
+cb.new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_2_tiffs", full.names = TRUE)
 
 # Load CSVs
-camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
-cbuff_csv <- read.csv("~/Local/Dissertation/CBuff_DailyMeanLuminosity.csv")
+camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
+cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
 
 # Helper: Load and aggregate rasters
 load_rasters <- function(file_paths, prefix_to_remove) {
@@ -239,7 +239,7 @@ df_fect <- df %>%
 df_fect_clean <- df_fect %>%
   group_by(id, time, date, D) %>%
   summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop") %>%
-  filter(date <= as.Date("2018-11-08") | date >= ("2018-12-06"))
+  filter(date <= as.Date("2018-11-08") | date >= ("2019-01-07"))
 
 
 
