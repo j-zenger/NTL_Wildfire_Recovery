@@ -1,0 +1,194 @@
+---
+title: "Data Processing"
+author: "Me"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load and Visualize Data
+
+```{r}
+# Load packages
+library(blackmarbler)
+library(geodata)
+library(sf)
+library(terra)
+library(ggplot2)
+library(tidyterra)
+library(lubridate)
+library(dplyr)
+library(tmap)
+library(raster)
+library(rnaturalearth)
+library(jsonlite)
+library(dplyr)
+library(tools)
+library(utils)
+library(plotly)
+
+
+thomas_csv <- read.csv("~/Local/Dissertation/NewestThomasFire_Year_DailyMeanLuminosity.csv")
+buffer_csv <- read.csv("~/Local/Dissertation/NewestBuffer_Year_DailyMeanLuminosity.csv")
+
+
+# Load satellite data
+thomas_outputs <- list.files("~/Local/Dissertation/ThomasFireYear_TIFFs", full.names = TRUE)
+
+# Load satellite data
+thomas_data <- lapply(thomas_outputs, rast)
+
+buffer_outputs <- list.files("~/Local/Dissertation/Buffer_TIFFs", full.names = TRUE)
+buffer_data <- lapply(buffer_outputs, rast)
+
+# Name the output rasters in satellite data based on the file names 
+# Extract file names without extension and path
+b.file_names <- tools::file_path_sans_ext(basename(buffer_outputs))
+
+# Name the list elements using extracted file names
+names(buffer_data) <- b.file_names
+
+# Check the names
+print(names(buffer_data))
+
+# Get rid of the ThomasFire_ prefix
+names(buffer_data) <- gsub("Buffer_", "", names(buffer_data))
+
+# Merge rasters with their corresponding metadata
+b.combined_data <- lapply(names(buffer_data), function(name) {
+  list(
+    raster = buffer_data[[name]],
+    metadata = buffer_csv %>% filter(system.index == name)
+  )
+})
+
+# Assign names to the combined list
+names(b.combined_data) <- names(buffer_data)
+
+# Check merged structure
+summary(b.combined_data)
+plot(b.combined_data[[100]]$raster)
+
+```
+
+```{r}
+# Name the output rasters in satellite data based on the file names 
+# Extract file names without extension and path
+file_names <- tools::file_path_sans_ext(basename(thomas_outputs))
+
+# Name the list elements using extracted file names
+names(thomas_data) <- file_names
+
+# Check the names
+print(names(thomas_data))
+
+# Get rid of the ThomasFire_ prefix
+names(thomas_data) <- gsub("ThomasFire_", "", names(thomas_data))
+
+# Check structure
+str(thomas_csv)
+
+# Preview first few rows
+head(thomas_csv)
+
+# Merge rasters with their corresponding metadata
+combined_data <- lapply(names(thomas_data), function(name) {
+  list(
+    raster = thomas_data[[name]],
+    metadata = thomas_csv %>% filter(system.index == name)
+  )
+})
+
+# Assign names to the combined list
+names(combined_data) <- names(thomas_data)
+
+# Check merged structure
+summary(combined_data)
+plot(combined_data[[146]]$raster)
+
+```
+## Visualize Mean Luminosity 
+```{r}
+
+# Load necessary libraries
+library(dplyr)
+library(plotly)
+
+# View first few rows of buffer_csv to inspect data
+print(head(buffer_csv))
+
+# Filter data based on Mandatory_Quality_Flag condition
+f.thomas_csv <- thomas_csv %>% 
+  filter(Mandatory_Quality_Flag <= 0.05 | is.na(Mandatory_Quality_Flag))
+
+f.buffer_csv <- buffer_csv %>%
+  filter(Mandatory_Quality_Flag <= 0.5 | is.na(Mandatory_Quality_Flag))
+
+# Convert date columns to Date type
+f.thomas_csv$date <- as.Date(f.thomas_csv$date)
+f.buffer_csv$date <- as.Date(f.buffer_csv$date)
+
+# Add source column to both datasets
+f.thomas_csv$source <- "Thomas Fire"
+f.buffer_csv$source <- "Buffer"
+
+# Aggregate by week
+f.thomas_weekly <- f.thomas_csv %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(week) %>%
+  summarize(mean_NTL = mean(Gap_Filled_DNB_BRDF_Corrected_NTL, na.rm = TRUE))
+
+f.buffer_weekly <- f.buffer_csv %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(week) %>%
+  summarize(mean_NTL = mean(Gap_Filled_DNB_BRDF_Corrected_NTL, na.rm = TRUE))
+
+# Plot mean luminosity as a smoothed trendline
+ggplot(f.thomas_weekly, aes(x = week, y = mean_NTL, group = 1)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Smooth Trend Line of NTL Data",
+       x = "Date",
+       y = "NTL Value")
+
+
+```
+
+## Combine and Visualize Data
+```{r}
+# Combine the two dataframes
+combined_csv <- bind_rows(f.thomas_csv, f.buffer_csv)
+head(combined_csv)
+
+# Add source column to both datasets
+f.thomas_weekly$source <- "Thomas Fire"
+f.buffer_weekly$source <- "Buffer"
+
+#` Combine the two dataframes
+combined_weekly <- bind_rows(f.thomas_weekly, f.buffer_weekly)
+
+
+# Plot the trendlines from both datasets
+ggplot(combined_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+       x = "Date",
+       y = "NTL Value") +
+  scale_color_manual(values = c("blue", "red")) 
+
+# Plot the trendlines from both datasets
+ggplot(combined_weekly, aes(x = week, y = mean_NTL, color = source, group = source)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+       x = "Date",
+       y = "NTL Value") +
+  scale_color_manual(values = c("blue", "red")) 
+
+
+```

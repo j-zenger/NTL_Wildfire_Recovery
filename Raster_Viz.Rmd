@@ -1,0 +1,369 @@
+---
+title: "raster_viz"
+author: "Josie Zenger"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries, echo=FALSE, message=FALSE, warning=FALSE}
+# Load necessary libraries
+# Load packages
+library(blackmarbler)
+library(geodata)
+library(sf)
+library(terra)
+library(ggplot2)
+library(tidyterra)
+library(lubridate)
+library(dplyr)
+library(tmap)
+library(raster)
+library(rnaturalearth)
+library(jsonlite)
+library(dplyr)
+library(tools)
+library(utils)
+library(plotly)
+library(gridExtra)
+
+# Load in camp buffer shapefile 
+camp_buffer_sf <- st_read("~/Local/Dissertation/camp_fire_buffer/camp_fire_buffer.shp")
+
+# Load in the fire roi shapefile
+f.roi <- st_read("~/Local/Dissertation/camp_sf/camp_fire.shp")
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load satellite data
+camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
+
+# Load in the camp fire csv
+camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
+
+# Load satellite data
+camp_data <- lapply(camp_outputs, rast)
+
+# Name the output rasters in satellite data based on the file names 
+# Extract file names without extension and path
+c.file_names <- tools::file_path_sans_ext(basename(camp_outputs))
+
+# Name the list elements using extracted file names
+names(camp_data) <- c.file_names
+
+
+# Get rid of the ThomasFire_ prefix
+names(camp_data) <- gsub("Camp_", "", names(camp_data))
+
+# Merge rasters with their corresponding metadata
+c.combined_data <- lapply(names(camp_data), function(name) {
+  list(
+    raster = camp_data[[name]],
+    metadata = camp_csv %>% filter(system.index == name)
+  )
+})
+
+# Assign names to the combined list
+names(c.combined_data) <- names(camp_data)
+
+# Check merged structure
+summary(c.combined_data)
+plot(c.combined_data[[100]]$raster)
+
+```
+
+```{r}
+# Load buffer rasters
+# Load satellite data
+cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
+
+# Load in the camp fire csv
+cbuff_csv <- read.csv("~/Local/Dissertation/CBuff_DailyMeanLuminosity.csv")
+
+# Load satellite data
+cbuff_data <- lapply(cbuff_outputs, rast)
+
+# Name the output rasters in satellite data based on the file names 
+# Extract file names without extension and path
+cb.file_names <- tools::file_path_sans_ext(basename(cbuff_outputs))
+
+# Name the list elements using extracted file names
+names(cbuff_data) <- cb.file_names
+
+
+# Get rid of the prefix
+names(cbuff_data) <- gsub("CBuff_", "", names(cbuff_data))
+
+# Merge rasters with their corresponding metadata
+cb.combined_data <- lapply(names(cbuff_data), function(name) {
+  list(
+    raster = cbuff_data[[name]],
+    metadata = cbuff_csv %>% filter(system.index == name)
+  )
+})
+
+# Assign names to the combined list
+names(cb.combined_data) <- names(cbuff_data)
+
+# Check merged structure
+summary(cb.combined_data)
+plot(cb.combined_data[[24]]$raster)
+
+
+
+
+```
+
+```{r}
+
+library(terra)
+library(dplyr)
+library(lubridate)
+
+# Step 1: Create a data frame with dates and week identifiers
+dates_df <- tibble(
+  name = names(camp_data),
+  date = as.Date(name),
+  week = floor_date(as.Date(name), unit = "week", week_start = 1)  # ISO week
+)
+
+# Step 2: Group rasters by week
+weekly_composites <- dates_df %>%
+  group_by(week) %>%
+  group_split()
+
+# Step 3: Create weekly composites (mean raster)
+camp_weekly_rasters <- list()
+
+for (group in weekly_composites) {
+  week_str <- as.character(unique(group$week))
+  rasters_to_stack <- lapply(group$name, function(n) camp_data[[n]])
+  
+  # Stack and compute mean
+  stacked <- rast(rasters_to_stack)
+  composite <- app(stacked, fun = mean, na.rm = TRUE)
+  
+  # Store in list
+  camp_weekly_rasters[[week_str]] <- composite
+  
+  # Optional: Save to file
+  writeRaster(composite,
+              filename = paste0("~/Local/Dissertation/Weekly_Rasters", week_str, ".tif"),
+              overwrite = TRUE)
+}
+
+example_week_4 <- names(camp_weekly_rasters)[2]
+plot(camp_weekly_rasters[[example_week_4]],
+     main = paste("Weekly Composite:", example_week_4))
+
+example_week_3 <- names(camp_weekly_rasters)[28]
+plot(camp_weekly_rasters[[example_week_3]],
+     main = paste("Weekly Composite:", example_week_3))
+
+example_week <- names(camp_weekly_rasters)[60]
+plot(camp_weekly_rasters[[example_week]],
+     main = paste("Weekly Composite:", example_week))
+
+rasters_to_plot <- c(
+  camp_weekly_rasters[[example_week_4]],
+  camp_weekly_rasters[[example_week_3]],
+  camp_weekly_rasters[[example_week]]
+)
+
+# Plot in a 3 x 1 layout
+plot(rasters_to_plot,
+     main = c(paste("Weekly Composite:", example_week_4),
+              paste("Weekly Composite:", example_week_3),
+              paste("Weekly Composite:", example_week)),
+     nc = 1)
+
+
+
+# Weeks of interest: 2, 15, 27, 28, 29, 30, 31, 41, 54
+
+```
+
+```{r}
+
+# Now create buffer composites
+# Step 1: Create a data frame with dates and week identifiers
+# Step 1: Create a data frame with dates and week identifiers
+cb.dates_df <- tibble(
+  name = names(cbuff_data),
+  date = as.Date(name),
+  week = floor_date(as.Date(name), unit = "week", week_start = 1)  # ISO week
+)
+
+# Step 2: Group rasters by week
+cb.weekly_composites <- cb.dates_df %>%
+  group_by(week) %>%
+  group_split()
+
+# Step 3: Create weekly composites (mean raster)
+cbuff_weekly_rasters <- list()
+
+for (group in cb.weekly_composites) {
+  week_str <- as.character(unique(group$week))
+  rasters_to_stack <- lapply(group$name, function(n) cbuff_data[[n]])
+  
+  # Stack and compute mean
+  stacked <- rast(rasters_to_stack)
+  composite <- app(stacked, fun = mean, na.rm = TRUE)
+  
+  # Store in list
+  cbuff_weekly_rasters[[week_str]] <- composite
+  
+  # Optional: Save to file
+  writeRaster(composite,
+              filename = paste0("~/Local/Dissertation/CBuff_Weekly_Rasters", week_str, ".tif"),
+              overwrite = TRUE)
+}
+
+
+
+example_week_5 <- names(camp_weekly_rasters)[2]
+plot(cbuff_weekly_rasters[[example_week_5]],
+     main = paste("Weekly Composite:", example_week_5))
+
+example_week_2 <- names(cbuff_weekly_rasters)[28]
+plot(cbuff_weekly_rasters[[example_week_2]],
+     main = paste("Weekly Composite:", example_week_2))
+
+example_week_6 <- names(cbuff_weekly_rasters)[31]
+plot(cbuff_weekly_rasters[[example_week_6]],
+     main = paste("Weekly Composite:", example_week_6))
+
+rasters_to_plot_2 <- c(
+  cbuff_weekly_rasters[[example_week_5]],
+  cbuff_weekly_rasters[[example_week_2]],
+  cbuff_weekly_rasters[[example_week_6]]
+)
+
+# Plot in a 3 x 1 layout
+plot(rasters_to_plot_2,
+     main = c(paste("Weekly Composite:", example_week_4),
+              paste("Weekly Composite:", example_week_3),
+              paste("Weekly Composite:", example_week_6)),
+     nc = 1)
+
+
+```
+
+```{r}
+
+# Create a raster list with files for what i want to display in the 3 x 3 grid
+# select the 9 weeks of visualization that i want to display 
+# bind together the buffer and camp for those 9 weeks 
+# then create the tmap for the list of combined rasters with the labels on them 
+fire_start <- as.Date("2018-11-08")
+
+# Define the 9 key weeks
+target_weeks <- c(
+  fire_start - months(6),
+  fire_start - months(3),
+  fire_start - weeks(1),
+  fire_start,                          # day of fire
+  fire_start + weeks(1),
+  fire_start + weeks(2),
+  fire_start + weeks(3),
+  fire_start + months(3),
+  fire_start + years(1)
+)
+
+# Convert to Monday-starting ISO week
+target_weeks <- floor_date(target_weeks, unit = "week", week_start = 1)
+target_weeks_str <- as.character(target_weeks)
+
+
+
+combined_weekly_rasters <- list()
+
+for (w in target_weeks_str) {
+  buffer_r <- cbuff_weekly_rasters[[w]]
+  camp_r <- camp_weekly_rasters[[w]]
+
+  # Combine by taking the mean where overlapping, or prioritize treatment area
+  combined_r <- mosaic(camp_r, buffer_r, fun = mean)
+  
+  combined_weekly_rasters[[w]] <- combined_r
+}
+
+
+```
+
+```{r echo=FALSE}
+library(tmap)
+
+tmap_mode("view")
+
+
+plot_list <- lapply(seq_along(combined_weekly_rasters), function(i) {
+  week_name <- names(combined_weekly_rasters)[i]
+  r <- combined_weekly_rasters[[i]]
+  
+  tm_shape(r) +
+    tm_raster(title = "Luminosity", palette = "viridis", style = "cont") +
+    tm_shape(camp_buffer_sf) + tm_borders(col = "blue", lwd = 1) +
+    tm_shape(f.roi) + tm_borders(col = "red", lwd = 1) +
+    tm_layout(title = paste("Week of", week_name), legend.show = FALSE)
+})
+
+tmap_arrange(grobs = plot_list, ncol = 3, nrow = 3)
+
+```
+```{r}
+
+
+treatment_weekly_rasters <- list()
+buffer_weekly_rasters <- list()
+
+for (w in target_weeks_str) {
+  treatment_weekly_rasters[[w]] <- camp_weekly_rasters[[w]]
+  buffer_weekly_rasters[[w]] <- cbuff_weekly_rasters[[w]]
+}
+
+weeks <- target_weeks_str  # your 9-week vector
+
+# Define which 3 you want to use
+pre_fire   <- weeks[1]  # 6 months before
+during_fire <- weeks[4]  # fire start week
+post_fire  <- weeks[9]  # 12 months after
+
+
+treatment_stack <- rast(list(
+  treatment_weekly_rasters[[pre_fire]],
+  treatment_weekly_rasters[[during_fire]],
+  treatment_weekly_rasters[[post_fire]]
+))
+
+buffer_stack <- rast(list(
+  buffer_weekly_rasters[[pre_fire]],
+  buffer_weekly_rasters[[during_fire]],
+  buffer_weekly_rasters[[post_fire]]
+))
+
+names(treatment_stack) <- c("Pre-Fire", "During Fire", "Post-Fire")
+names(buffer_stack) <- c("Pre-Fire", "During Fire", "Post-Fire")
+
+par(mfrow = c(2, 3))
+
+plot(treatment_stack[[1]], main = "Treatment: Pre-Fire")
+plot(treatment_stack[[2]], main = "Treatment: During Fire")
+plot(treatment_stack[[3]], main = "Treatment: Post-Fire")
+
+plot(buffer_stack[[1]], main = "Buffer: Pre-Fire")
+plot(buffer_stack[[2]], main = "Buffer: During Fire")
+plot(buffer_stack[[3]], main = "Buffer: Post-Fire")
+
+
+
+
+
+
+
+```

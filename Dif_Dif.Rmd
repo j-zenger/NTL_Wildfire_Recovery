@@ -1,0 +1,260 @@
+---
+title: "Dif-Dif"
+author: "Josie Zenger"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# load libraries
+library(tidyverse)
+library(ggplot2)
+library(ggdist)
+library(sf)
+library(terra)
+library(ggplot2)
+library(tidyterra)
+library(lubridate)
+library(dplyr)
+library(tmap)
+library(dplyr)
+library(tools)
+library(utils)
+library(plotly)
+library(did)
+library(purrr)
+library(fect)
+
+camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
+
+# Load in the camp fire csv
+df <- read.csv("~/Local/Dissertation/ccombined.csv")
+
+```
+
+
+```{r}
+library(terra)
+library(dplyr)
+library(purrr)
+library(lubridate)
+library(tibble)
+
+# Load raster file paths
+camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
+new_outputs <- list.files("~/Local/Dissertation/CampFire_2_TIFFs", full.names = TRUE)
+cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
+cb.new_outputs <- list.files("~/Local/Dissertation/CBuff_2_tiffs", full.names = TRUE)
+
+# Load CSVs
+camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
+cbuff_csv <- read.csv("~/Local/Dissertation/CBuff_DailyMeanLuminosity.csv")
+
+# Helper: Load and aggregate rasters
+load_rasters <- function(file_paths, prefix_to_remove) {
+  rasters <- lapply(file_paths, function(path) {
+    r <- rast(path)
+    aggregate(r, fact = 3, fun = mean, na.rm = TRUE)  # aggregate pixels
+  })
+  names(rasters) <- tools::file_path_sans_ext(basename(file_paths))
+  names(rasters) <- gsub(prefix_to_remove, "", names(rasters))
+  rasters
+}
+
+camp_data <- load_rasters(c(camp_outputs, new_outputs), "Camp_")
+cbuff_data <- load_rasters(c(cbuff_outputs, cb.new_outputs), "CBuff_")
+
+# Extract and align dates
+get_week_df <- function(raster_list) {
+  tibble(
+    name = names(raster_list),
+    date = as.Date(names(raster_list)),
+    week = floor_date(as.Date(names(raster_list)), unit = "week", week_start = 1)
+  )
+}
+
+camp_weeks_df <- get_week_df(camp_data)
+cbuff_weeks_df <- get_week_df(cbuff_data)
+
+# Composite rasters weekly
+composite_by_week <- function(week_df, raster_list) {
+  week_df %>%
+    group_by(week) %>%
+    group_split() %>%
+    setNames(map_chr(., ~ as.character(unique(.$week)))) %>%
+    map(~ {
+      rasters_to_stack <- lapply(.$name, function(n) raster_list[[n]])
+      composite <- app(rast(rasters_to_stack), fun = mean, na.rm = TRUE)
+      composite
+    })
+}
+
+camp_weekly_rasters <- composite_by_week(camp_weeks_df, camp_data)
+cbuff_weekly_rasters <- composite_by_week(cbuff_weeks_df, cbuff_data)
+
+# Helper: convert to list with metadata
+combine_data <- function(raster_list, unit_label) {
+  lapply(names(raster_list), function(name) {
+    list(
+      raster = raster_list[[name]],
+      date = as.Date(name),
+      unit_type = unit_label
+    )
+  }) %>% setNames(names(raster_list))
+}
+
+c.combined_data <- combine_data(camp_weekly_rasters, "Treatment")
+cb.combined_data <- combine_data(cbuff_weekly_rasters, "Control")
+
+# Combine both treatment and control
+total_combined_data <- c(c.combined_data, cb.combined_data)
+
+# Convert each raster to dataframe
+raster_to_df <- function(entry) {
+  df <- as.data.frame(entry$raster, xy = TRUE, cells = TRUE)
+  if (nrow(df) == 0) return(NULL)
+  df$date <- entry$date
+  df$unit_type <- entry$unit_type
+  df
+}
+
+panel_pixel_data <- map_dfr(total_combined_data, raster_to_df)
+
+
+
+```
+
+```{r}
+df <- panel_pixel_data %>%
+  rename(pixel_id = cell) %>%
+  mutate(
+    time = as.numeric(factor(date)),  # time index
+    unit = as.numeric(as.factor(paste0(unit_type, "_", pixel_id))),  # unique unit ID
+    treated = ifelse(unit_type == "Treatment", 1, 0),
+    fire_start = as.Date("2018-11-08"),
+    fire_end = as.Date("2018-12-06"),
+    treatment_period = ifelse(date >= fire_start & date <= fire_end, 1, 0), 
+    mean = mean)  # Assuming this is the column for luminosity)
+
+```
+
+
+```{r}
+
+csdid_model <- att_gt(
+  yname = "DNB_BRDF_Corrected_NTL",
+  tname = "time",
+  idname = "pixel_id",
+  gname = "G",  # 0 = never treated
+  data = df,
+  panel = FALSE,
+  est_method = "dr"
+)
+
+summary(csdid_model)
+
+
+
+# Optional: aggregate dynamic effects (event study-style)
+agg_effects <- aggte(att_results, type = "dynamic")
+summary(agg_effects)
+plot(agg_effects)
+
+
+```
+
+
+```{r}
+# Perform DID analysis 
+
+df <- read.csv("ccombined.csv")
+df$date <- as.Date(df$date)
+
+# Fire treatment window
+fire_start <- as.Date("2018-11-08")
+fire_end <- as.Date("2018-12-06")
+
+# Create treatment period indicator
+df$treatment_period <- ifelse(df$date >= fire_start & df$date <= fire_end, 1, 0)
+
+# Create numeric unit IDs from source (e.g., Buffer = 1, Camp Fire = 2)
+df$unit <- as.numeric(as.factor(df$source))
+
+# Order by unit and date
+df <- df[order(df$unit, df$date), ]
+
+# Create numeric time index
+df$time <- as.numeric(factor(df$date))
+
+# Get numeric time index corresponding to fire_start
+fire_time_index <- unique(df$time[df$date == fire_start])
+
+# Create treatment cohort variable G
+# Set to fire_time_index for Camp Fire group, 0 for Buffer (never treated)
+# First, identify treatment group value
+treatment_unit_value <- df$unit[df$source == "Camp Fire"][1]
+df$G <- ifelse(df$unit == treatment_unit_value, fire_time_index, 0)
+
+# Rename for use with att_gt()
+df$luminosity <- df$Gap_Filled_DNB_BRDF_Corrected_NTL
+
+# Run event-study-style difference-in-differences
+library(did)
+
+att_gt_out <- att_gt(
+  yname = "luminosity",
+  tname = "time",
+  idname = "unit",
+  gname = "G",
+  data = df,
+  panel = FALSE
+)
+
+# Aggregate ATT dynamically
+agg_dynamic <- aggte(att_gt_out, type = "dynamic")
+
+# Plot the event study
+plot(agg_dynamic)
+
+
+
+
+
+```
+
+```{r}
+df_fect <- df %>%
+  filter(!is.na(mean)) %>%
+  mutate(
+    id = paste0(unit_type, "_", pixel_id),
+    D = ifelse(unit_type == "Treatment" & date >= as.Date("2018-11-08"), 1, 0)
+  ) %>%
+  select(id, time, date, mean, D)
+
+df_fect_clean <- df_fect %>%
+  group_by(id, time, date, D) %>%
+  summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop") %>%
+  filter(date <= as.Date("2018-11-08") | date >= ("2018-12-06"))
+
+
+
+fect_model <- fect(
+  Y = "mean",
+  D = "D",
+  data = df_fect_clean,
+  index = c("id", "time"),
+  method = "ife",
+  se = TRUE,
+  nboots = 200
+)
+
+summary(fect_model)
+plot(fect_model, type = "gap") +
+  scale_y_continuous(limits = c(-0.5, 0.5))
+
+```

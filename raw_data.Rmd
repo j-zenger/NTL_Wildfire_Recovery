@@ -30,56 +30,49 @@ bearer <- get_nasa_token(username = "josiebea",
                          password = 'qE7S-5j5bh".Q"%')
 ```
 
-```{r cars}
+```{r}
 # Example: Define bounding box manually
 sb_ventura_bbox <- st_bbox(c(xmin=-120.85, xmax=-118.5, ymin=33.5, ymax=35.5), crs=4326)
 roi1 <- st_as_sfc(sb_ventura_bbox)
 
 ```
 
-```{r cars}
-# Load Thomas Fire shapefile 
-# Create date vector
-date_vector <- seq(from = as.Date("2017-11-29"), to = as.Date("2018-01-02"), by = "day")
+```{r Camp Fire plot}
 
-# Load Thomas Fire shapefile
-calfire_sf <- "https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Historic_Fire_Perimeters/FeatureServer/2/query?where=1%3D1&outFields=*&outSR=4326&f=json"
+# Load in the zipped California fire perimeters folder
+roi <- st_read("~/Downloads/California_Fire_Perimeters_(all)/California_Fire_Perimeters_(all).shp") # Load shapefile
 
-roi <- st_read(calfire_sf)
+f.roi <- roi %>%
+  filter(FIRE_NAME == 'CAMP', 
+         UNIT_ID == 'BTU')
 
-# Filter to Thomas Fire
-roi_sf <- roi %>% filter(OBJECTID == 2655)  # Thomas Fire shapefile 
+# Correctly write full sf object, not just geometry
+st_write(f.roi, 
+         dsn = "~/Local/Dissertation/camp_sf", 
+         layer = "camp_fire", 
+         driver = "ESRI Shapefile", 
+         append = FALSE)
 
-swdir <- "~/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/wildfire_recovery_ntl_data/raw"
-
-(st_write(roi_sf, "thomas_fire.shp", append = FALSE))
-(plot(st_geometry(roi_sf)))
 
 ```
 
-```{r}
+```{r Camp Fire }
 # Create a buffer around the fire perimeter and clip it to the coastline
 # Load coastline data
-coastline <- ne_countries(scale = "medium", returnclass = "sf")  # Land boundaries
 
-# Function to create buffer and clip at coastline
-buffer_sf <- function(roi_sf, coastline, buffer_km = 10) {
-  if (nrow(roi_sf) == 0) {
+buffer_c <- function(f.roi, buffer_km = 10) {
+  if (nrow(f.roi) == 0) {
     stop("No matching fire perimeter found.")
   }
-  
-  # Create buffer around the fire perimeter
-  fire_buffer_sf <- st_buffer(roi_sf, dist = buffer_km * 1000)  # Convert km to meters
-  
-  # Remove the fire perimeter from the buffer
-  fire_overlap <- st_difference(fire_buffer_sf, roi_sf)
-  
-  # Clip buffer to land area (remove ocean parts)
-  fire_buffer_clipped <- st_intersection(fire_overlap, coastline)
-  
-  return(fire_buffer_clipped)
-}
 
+  # Create buffer around the fire perimeter
+  camp_buffer_sf <- st_buffer(f.roi, dist = buffer_km * 1000)  # km to meters
+
+  # Remove the fire perimeter from the buffer (to get just the ring)
+  camp_fire_overlap <- st_difference(camp_buffer_sf, f.roi)
+
+  return(camp_fire_overlap)
+}
 
 # Load necessary package
 library(sf)
@@ -90,31 +83,31 @@ if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)  # Create directory if it doesn't exist
 }
 
-# Generate clipped buffer
-fire_buffer_sf <- buffer_sf(roi_sf, coastline, buffer_km = 10)
+# Generate buffer
+camp_buffer_sf <- buffer_c(f.roi, buffer_km = 10)
 
-# Keep only geometry to avoid field name issues
-fire_buffer_sf <- fire_buffer_sf %>% select(geometry)
+# Keep only geometry
+camp_buffer_sf <- dplyr::select(camp_buffer_sf, geometry)
 
-# Define the full path without specifying the file name (Shapefile creates multiple files)
-shapefile_name <- "clipped_fire_buffer"
+# Output directory
+output_dir <- "~/Local/Dissertation"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Save buffer as Shapefile
+shapefile_name <- "camp_fire_buffer"
 shapefile_path <- file.path(output_dir, shapefile_name)
-
-# Save as a Shapefile
-st_write(fire_buffer_sf, dsn = shapefile_path, driver = "ESRI Shapefile", append = FALSE)
+st_write(camp_buffer_sf, dsn = shapefile_path, driver = "ESRI Shapefile", append = FALSE)
 
 print(paste("Shapefile successfully saved to:", shapefile_path))
 
-
-# Plot using tmap
-tmap_mode("view")  # Switch to interactive mode (use "plot" for static)
-
-tm_shape(fire_buffer_sf) + 
+# Plot
+tmap_mode("view")
+tm_shape(camp_buffer_sf) + 
   tm_polygons(col = "blue", alpha = 0.3, border.col = "blue") + 
-  tm_shape(roi_sf) + 
+  tm_shape(f.roi) + 
   tm_polygons(col = "red", alpha = 0.5, border.col = "red") + 
   tm_basemap("OpenStreetMap") + 
-  tm_layout(title = "Thomas Fire Perimeter and Clipped Buffer")
+  tm_layout(title = "Camp Fire and Buffer")
 
 ```
 

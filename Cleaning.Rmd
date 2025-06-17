@@ -31,57 +31,56 @@ library(rnaturalearth)
 library(jsonlite)
 library(dplyr)
 library(tools)
-library(utils)
-library(plotly)
 
 
 config <- fromJSON("~/Local/Dissertation/NTL_Wildfire_Recovery/data_config.json")
 print(config$data_path)
 
-thomas_csv <- read.csv("~/Local/Dissertation/ThomasFire_Year_DailyMeanLuminosity (1).csv")
-buffer_csv <- read.csv("~/Local/Dissertation/Buffer_Year_DailyMeanLuminosity.csv")
+satellite_results <- read.csv("~/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/wildfire_recovery_ntl_data/raw/satellite_results.csv")
+#buffer_results <- read.csv("~/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/wildfire_recovery_ntl_data/raw/buffer_results.csv")
 
 # Load satellite data
-thomas_outputs <- list.files("~/Local/Dissertation/ThomasFireYear_TIFFs", full.names = TRUE)
+satellite_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/satellite_outputs", full.names = TRUE)
 
-# Load satellite data
-thomas_data <- lapply(thomas_outputs, rast)
+# filter files from he satellite output folder that are pngs, and older keep files that are TIFs
+satellite_outputs <- satellite_outputs[grepl("tif$", satellite_outputs)]
 
-buffer_outputs <- list.files("~/Local/Dissertation/Buffer_TIFFs", full.names = TRUE)
-buffer_data <- lapply(buffer_outputs, rast)
+satellite_data <- lapply(satellite_outputs, rast)
 
-```
-
-```{r}
 # Name the output rasters in satellite data based on the file names 
 # Extract file names without extension and path
-file_names <- tools::file_path_sans_ext(basename(thomas_outputs))
+file_names <- tools::file_path_sans_ext(basename(satellite_outputs))
 
 # Name the list elements using extracted file names
-names(thomas_data) <- file_names
+names(satellite_data) <- file_names
 
 # Check the names
-print(names(thomas_data))
-
-# Get rid of the ThomasFire_ prefix
-names(thomas_data) <- gsub("ThomasFire_", "", names(thomas_data))
+print(names(satellite_data))
+plot(satellite_data[[811]])
+# satellite csv
+satellite_results <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/satellite_results.csv")
 
 # Check structure
-str(thomas_csv)
+str(satellite_results)
 
 # Preview first few rows
-head(thomas_csv)
+head(satellite_results)
+
+
+# Clean raster_path in CSV to match raster file names
+satellite_results <- satellite_results %>%
+  mutate(raster_name = file_path_sans_ext(basename(raster_path)))
 
 # Merge rasters with their corresponding metadata
-combined_data <- lapply(names(thomas_data), function(name) {
+combined_data <- lapply(names(satellite_data), function(name) {
   list(
-    raster = thomas_data[[name]],
-    metadata = thomas_csv %>% filter(system.index == name)
+    raster = satellite_data[[name]],
+    metadata = satellite_results %>% filter(raster_name == name)
   )
 })
 
 # Assign names to the combined list
-names(combined_data) <- names(thomas_data)
+names(combined_data) <- names(satellite_data)
 
 # Check merged structure
 summary(combined_data)
@@ -89,80 +88,33 @@ plot(combined_data[[2]]$raster)
 
 ```
 
+
+You can also embed plots, for example:
+
 ```{r pressure, echo=FALSE}
-
-# Load necessary libraries
-library(dplyr)
-library(plotly)
-
-# Optional: View first few rows of buffer_csv to inspect data
-print(head(buffer_csv))
-
-# Filter data based on Mandatory_Quality_Flag condition
-thomas_csv <- thomas_csv %>% 
-  filter(Mandatory_Quality_Flag <= 0.05 | is.na(Mandatory_Quality_Flag))
-
-buffer_csv <- buffer_csv %>%
-  filter(Mandatory_Quality_Flag <= 0.05 | is.na(Mandatory_Quality_Flag))
-
-# Convert date columns to Date type
-thomas_csv$date <- as.Date(thomas_csv$date)
-buffer_csv$date <- as.Date(buffer_csv$date)
-
-# Remove rows with NA or non-finite values
-clean_data <- thomas_csv %>% 
-  thomas_csv$date <- as.Date(thomas_csv$date)
-  filter(!is.na(date) & is.finite(date))
+# Process data 
 
 
-thomas_csv <- thomas_csv %>% 
-  filter(!is.na(date) & is.finite(date))
-
-str(thomas_csv)
-# Plot mean luminosity as a smoothed trendline
-ggplot(thomas_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, group = 1)) +
-  geom_line() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data",
-       x = "Date",
-       y = "NTL Value")
+    kmz_file <- "~/Downloads/USA_Flares.kmz"
+    sf_data <- st_read(kmz_file, driver = "KML")
 
 
-buffer_csv$date <- as.Date(buffer_csv$date)
-buffer_csv <- buffer_csv %>% 
-  filter(!is.na(date) & is.finite(date))
+install.packages("rgdal", type = "source", configure.args = c("--with-proj-include=/usr/local/include", "--with-proj-lib=/usr/local/lib"))
 
-# Plot mean luminosity as a smoothed trendline
-ggplot(thomas_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, group = 1)) +
-  geom_line() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data",
-       x = "Date",
-       y = "NTL Value")
+unzip("~/Downloads/USA_Flares.kmz", exdir = "kmz_unzipped")
 
+kml_file <- list.files("kmz_unzipped", pattern = "\\.kml$", full.names = TRUE)[1]  # Get the KML file
+kmz_data <- st_read(kml_file)
 
-# Combine the two dataframes
-combined_csv <- bind_rows(thomas_csv, buffer_csv)
-
-# Plot the trendlines from both datasets
-ggplot(combined_csv, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
-  geom_line() + 
-  geom_smooth(method = "lm", se = FALSE) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
-       x = "Date",
-       y = "NTL Value") +
-  scale_color_manual(values = c("blue", "red"))  # Optional: Set custom colors for the lines
-
-
-
-
+sat_df <- 
+input_dir <- normalizePath("~/Local/Dissertation/NTL_Wildfire_Recovery/satellite_outputs)
 
 
 ```
-```{r}
 
-```
 ```{r}
 # Plot the data
 
+
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
