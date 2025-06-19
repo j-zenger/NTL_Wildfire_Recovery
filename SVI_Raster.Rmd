@@ -104,7 +104,7 @@ tm_shape(tracts_with_burn) +
 ```{r}
 # Load shapefiles 
 
-camp_sf <- st_read("~/Local/Dissertation/camp_sf/camp_fire.shp")
+camp_sf <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_sf/camp_fire.shp")
 #buffer_sf <- st_read("~/Local/Dissertation/camp_fire_buffer/camp_fire_buffer.shp")
 tracts <- st_read("~/Downloads/tl_2018_06_tract/tl_2018_06_tract.shp")
 
@@ -170,17 +170,60 @@ extracted_df <- do.call(rbind, extracted_data)
 extracted_df <- extracted_df %>%
   mutate(date = ymd(date),
          year = year(date),
-         month = month(date, label = TRUE, abbr = FALSE)) %>%
-  rename(mean_ntl = 2)  # 2nd column is mean NTL
+         month = month(date)) %>%
+  rename(mean_ntl = 2)
 
 # Step 5: Group by tract and month, compute monthly average NTL
 monthly_avg_ntl <- extracted_df %>%
   group_by(TRACTCE, year, month) %>%
-  summarise(avg_ntl = mean(mean_ntl, na.rm = TRUE), .groups = "drop")
+  summarise(avg_ntl = mean(mean_ntl, na.rm = TRUE), .groups = "drop") %>%
+  mutate(month_start = as.Date(paste(year, month, "01", sep = "-")))
+
+fire_date <- ymd("2018-11-01")
+
+monthly_avg_ntl <- monthly_avg_ntl %>%
+  mutate(months_since_fire = 
+           (year(month_start) - year(fire_date)) * 12 +
+           (month(month_start) - month(fire_date)))
 
 # Step 6: View result
 print(head(monthly_avg_ntl))
 
 
 
+```
+```{r}
+# combine monthly ntl with the california svi data 
+svi_data <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CaliforniaSVI.csv")
+
+# Extract tract
+svi_data <- svi_data %>%
+  filter(COUNTY == "Butte")
+
+svi_data <- svi_data %>%
+  mutate(
+    # Extract tract number from label
+    LOCATION = str_extract(LOCATION, "(?<=Census Tract )[0-9\\.]+"),
+    
+    # Convert to 6-digit padded character, like "000901"
+    TRACTCE = str_pad(sprintf("%06d", as.integer(as.numeric(tract_num) * 100)), 6, pad = "0")
+  )
+
+# combine the two data sets together
+svi_monthly <- monthly_avg_ntl %>%
+  left_join(svi_data, by = "TRACTCE") %>%
+  select(TRACTCE, RPL_THEMES, avg_ntl, months_since_fire, month) 
+
+write.csv(svi_monthly, "~/Local/Dissertation/NTL_Wildfire_Recovery/svi_monthly.csv", row.names = FALSE)
+
+```
+
+
+
+```{r}
+library(fixest)
+
+model <- feols(avg_ntl ~ i(months_since_fire, RPL_THEMES, ref = 0) | TRACTCE, data = svi_monthly, 
+               cluster = ~ TRACTCE)
+summary(model)
 ```
