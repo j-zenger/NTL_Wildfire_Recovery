@@ -212,18 +212,116 @@ svi_data <- svi_data %>%
 # combine the two data sets together
 svi_monthly <- monthly_avg_ntl %>%
   left_join(svi_data, by = "TRACTCE") %>%
-  select(TRACTCE, RPL_THEMES, avg_ntl, months_since_fire, month) 
+  select(TRACTCE, RPL_THEMES, avg_ntl, months_since_fire, month, E_TOTPOP) %>% 
+  filter(months_since_fire >= 1)
 
 write.csv(svi_monthly, "~/Local/Dissertation/NTL_Wildfire_Recovery/svi_monthly.csv", row.names = FALSE)
 
+
+
 ```
 
+```{r}
 
+model_varying_slopes <- lm(avg_ntl ~ log1p(months_since_fire) * factor(TRACTCE) + E_TOTPOP, data = svi_monthly)
+summary(model_varying_slopes)
+
+# Step 1: Identify significant tracts
+significant_tracts <- c("1600", "2200")
+
+# Step 2: Create prediction data (from the full dataset)
+prediction_data <- svi_monthly %>%
+  mutate(predicted_ntl = predict(model_varying_slopes)) %>%
+  filter(TRACTCE %in% significant_tracts)  # Step 3: keep only significant tracts for plotting
+
+# Step 4: Plot
+ggplot(prediction_data, aes(x = months_since_fire, y = predicted_ntl, color = factor(TRACTCE))) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Predicted avg_ntl Over Time for Significant Interaction Tracts",
+    x = "Months Since Fire",
+    y = "Predicted avg_ntl",
+    color = "TRACTCE"
+  ) +
+  theme_minimal()
+
+
+```
 
 ```{r}
-library(fixest)
+# Model 1: log regression of months since fire and avg_ntl, with tract fixed effects
+svi_monthly <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/svi_monthly.csv")
 
-model <- feols(avg_ntl ~ i(months_since_fire, RPL_THEMES, ref = 0) | TRACTCE, data = svi_monthly, 
-               cluster = ~ TRACTCE)
-summary(model)
+model1_fe <- lm(avg_ntl ~ log1p(months_since_fire) + factor(TRACTCE) + E_TOTPOP, data = svi_monthly)
+summary(model1_fe)
+
+# Add fitted values to your original data
+svi_monthly <- svi_monthly %>%
+  mutate(predicted_ntl = predict(model1_fe))
+
+# Plot predicted avg_ntl over time by tract
+ggplot(svi_monthly, aes(x = months_since_fire, y = predicted_ntl, group = TRACTCE)) +
+  geom_line(alpha = 0.5) +
+  labs(
+    title = "Predicted Nighttime Light (NTL) Over Time by Census Tract",
+    x = "Months Since Fire",
+    y = "Predicted Average NTL"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+# Model 2: log regression of months since fire and avg_ntl with tracts fixed effects and SVI themes as moderator 
+library(lme4)
+
+model3_mixed <- lm(avg_ntl ~ log1p(months_since_fire) * RPL_THEMES + factor(TRACTCE) + E_TOTPOP, data = svi_monthly)
+summary(model3_mixed)
+
+
+library(ggplot2)
+library(dplyr)
+
+# Get coefficients from the model
+coefs <- coef(model3_mixed)
+intercept <- coefs["(Intercept)"]
+b_months <- coefs["log1p(months_since_fire)"]
+b_svi <- coefs["RPL_THEMES"]
+b_interaction <- coefs["log1p(months_since_fire):RPL_THEMES"]
+
+# Create a prediction dataset
+months <- 0:35
+svi_levels <- c(0.2, 0.8)
+
+plot_data <- expand.grid(
+  months_since_fire = months,
+  RPL_THEMES = svi_levels
+) %>%
+  mutate(
+    log_months = log1p(months_since_fire),
+    predicted_ntl = intercept +
+                    b_months * log_months +
+                    b_svi * RPL_THEMES +
+                    b_interaction * log_months * RPL_THEMES
+  )
+
+ggplot(plot_data, aes(x = months_since_fire, y = predicted_ntl, color = as.factor(RPL_THEMES))) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Predicted NTL Over Time by SVI Score",
+    x = "Months Since Fire",
+    y = "Predicted avg_ntl",
+    color = "SVI Score"
+  ) +
+  scale_color_manual(values = c("steelblue", "firebrick"),
+                     labels = c("Low SVI (0.2)", "High SVI (0.8)")) +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+
+
+
+
 ```

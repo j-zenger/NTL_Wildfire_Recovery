@@ -31,7 +31,7 @@ library(plotly)
 library(gridExtra)
 
 # Load in camp buffer shapefile 
-camp_buffer_sf <- st_read("~/Local/Dissertation/camp_fire_buffer/camp_fire_buffer.shp")
+camp_buffer_sf <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_fire_buffer/camp_fire_buffer.shp")
 
 # Load in the fire roi shapefile
 f.roi <- st_read("~/Local/Dissertation/camp_sf/camp_fire.shp")
@@ -41,10 +41,10 @@ f.roi <- st_read("~/Local/Dissertation/camp_sf/camp_fire.shp")
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load satellite data
-camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
+camp_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
 
 # Load in the camp fire csv
-camp_csv <- read.csv("~/Local/Dissertation/Camp_DailyMeanLuminosity.csv")
+camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
 
 # Load satellite data
 camp_data <- lapply(camp_outputs, rast)
