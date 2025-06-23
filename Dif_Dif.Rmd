@@ -239,7 +239,7 @@ df_fect <- df %>%
 df_fect_clean <- df_fect %>%
   group_by(id, time, date, D) %>%
   summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop") %>%
-  filter(date <= as.Date("2018-11-08") | date >= ("2019-01-07"))
+  filter(date < as.Date("2018-11-08") | date >= ("2019-01-07"))
 
 
 
@@ -256,5 +256,62 @@ fect_model <- fect(
 summary(fect_model)
 plot(fect_model, type = "gap") +
   scale_y_continuous(limits = c(-0.5, 0.5))
+
+```
+
+```{r}
+# make a log version to translate to elasticity 
+
+
+df_fect_clean$log_mean <- log(df_fect_clean$mean + 1)
+
+
+fect_model_log <- fect(
+  Y = "log_mean",
+  D = "D",
+  data = df_fect_clean,
+  index = c("id", "time"),
+  method = "ife",
+  se = TRUE,
+  nboots = 200
+)
+
+summary(fect_model_log)
+plot(fect_model, type = "gap") +
+  scale_y_continuous(limits = c(-0.5, 0.5))
+
+
+```
+
+```{r}
+
+plot(fect_model_log, type = "gap") +
+  scale_y_continuous(limits = c(-0.5, 0.5)) +
+  labs(y = "Estimated % Change in GDP (via NTL)",
+       x = "Weeks Since Wildfire",
+       title = "Elasticity of GDP (via NTL) to Wildfire Exposure")
+
+
+
+```
+
+```{r}
+# Lets investigate the funky parts of this result
+
+df_fect_clean %>%
+  filter(D == 1) %>%
+  group_by(id) %>%
+  summarise(mean = mean(log_mean, na.rm = TRUE)) %>%
+  arrange(desc(mean)) %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(id, -mean), y = mean)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 10 Units with Highest Log Mean Post-Fire",
+       x = "Unit ID",
+       y = "Mean Log GDP (via NTL)") +
+  theme_minimal()
+
+
 
 ```

@@ -120,8 +120,15 @@ camp_quarterly_counts <- lapply(camp_quarterly_rasters, function(r) {
 butte_data <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Butte_DailyMeanLuminosity_2.csv")
 
 # filter dates 2018-11-07 to 2018-12-07
-ntl_pre <- median(butte_data$Gap_Filled_DNB_BRDF_Corrected_NTL[butte_data$date <= "2018-11-07"])
-ntl_post <- median(butte_data$Gap_Filled_DNB_BRDF_Corrected_NTL[butte_data$date <= "2019-01-07"])
+ntl_pre <- median(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[camp_csv$date <= "2018-11-07"])
+ntl_post <- 0.3768 
+
+# dont know why this isnt working
+summary(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[
+  (camp_csv$date > as.Date("2019-01-07")) & (camp_csv$date < as.Date("2019-11-08"))
+])
+
+
 
 # Calculate percentage change
 pct_change_ntl <- (ntl_post - ntl_pre) / ntl_pre * 100
@@ -229,8 +236,11 @@ panel_pixel_data <- map_dfr(total_combined_data, raster_to_df)
 # ---- Step 6: Compute Pre/Post Means and % Change for Treatment Area ----
 disaster_start <- as.Date("2018-11-08")
 disaster_finish <- as.Date("2019-01-07")
-pre_month <- names(camp_monthly_rasters)[as.Date(names(camp_monthly_rasters)) < disaster_date]
+pre_month <- names(camp_monthly_rasters)[as.Date(names(camp_monthly_rasters)) < disaster_start]
 post_month <- names(camp_monthly_rasters)[as.Date(names(camp_monthly_rasters)) >= disaster_finish]
+
+# filter post month to only include the 12 months after the disaster instead of 24
+post_month <- post_month[1:12]
 
 pre_stack <- rast(camp_monthly_rasters[pre_month])
 post_stack <- rast(camp_monthly_rasters[post_month])
@@ -241,14 +251,23 @@ ntl_post_mean <- mean(post_stack, na.rm = TRUE)
 ntl_pct_change <- ((ntl_post_mean - ntl_pre_mean) / ntl_pre_mean) * 100
 
 # ---- Step 7: Estimate GDP Change Using Elasticities ----
-emp_elasticity <- -0.287 
+emp_elasticity <- 0.48 # empirical elasticity from butte county numbers
 gdp_change_emp <- ntl_pct_change / emp_elasticity
 gdp_change_fixed <- ntl_pct_change / 0.3
 
-# ---- Step 9 (Optional): Visualize ----
-plot(gdp_change_emp, main = "Estimated GDP Change (Empirical Elasticity)")
-plot(gdp_change_fixed, main = "Estimated GDP Change (Elasticity = 0.3)")
 
+library(terra)
+library(ggplot2)
+
+# Convert to data frame for plotting
+df_change <- as.data.frame(ntl_pct_change, xy = TRUE)
+names(df_change)[3] <- "pct_change"
+
+ggplot(df_change, aes(x = x, y = y, fill = pct_change)) +
+  geom_raster() +
+  scale_fill_gradient2(low = "red", mid = "white", high = "green", midpoint = 0) +
+  labs(title = "Percent Change in NTL (Pre vs Post Disaster)", fill = "% Change") +
+  theme_minimal()
 
 
 ```
@@ -275,7 +294,7 @@ pre_fire_avg_ntl <- camp_monthly_csv %>%
 
 # Step 3: Apply elasticity to each post-fire month
 fire_gdp_change <- camp_monthly_csv %>%
-  filter(month < as.Date("2018-11-01") | month > as.Date("2019-01-01")) %>%
+  filter(month > as.Date("2019-01-01")) %>%
   mutate(
     ntl_pct_change = ((mean_ntl - pre_fire_avg_ntl) / pre_fire_avg_ntl) * 100,
     gdp_pct_change_empirical = ntl_pct_change / emp_elasticity,
@@ -291,24 +310,52 @@ print(fire_gdp_change %>% select(month, ntl_pct_change, gdp_pct_change_empirical
 # Lets visualize
 library(ggplot2)
 
+fire_gdp_change <- camp_monthly_csv %>%
+  filter(month > as.Date("2019-01-01")) %>%
+  mutate(
+    ntl_pct_change = ((mean_ntl - pre_fire_avg_ntl) / pre_fire_avg_ntl) * 100,
+    gdp_pct_change_empirical = ntl_pct_change / emp_elasticity,
+    gdp_pct_change_fixed = ntl_pct_change / 0.3
+  )
+
 ggplot(fire_gdp_change, aes(x = month)) +
-  # Greyed-out panel for skewed data
-  annotate("rect",
-           xmin = as.Date("2018-10-01"),
-           xmax = as.Date("2019-02-01"),
-           ymin = -Inf,
-           ymax = Inf,
-           alpha = 0.2,
-           fill = "grey") +
-  # GDP trend lines
+
+  # GDP trend lines (with breaks)
   geom_line(aes(y = gdp_pct_change_empirical, color = "Empirical Elasticity")) +
-  geom_line(aes(y = gdp_pct_change_fixed, color = "Fixed Elasticity (0.3)")) +
+  geom_line(aes(y = gdp_pct_change_fixed, color = "Standard Elasticity (0.3)")) +
   labs(title = "Estimated Monthly GDP Change",
        y = "GDP Change (%)",
        x = "Month",
        color = "Elasticity Type") +
   theme_minimal()
 
+
+
+
+
+```
+
+```{r}
+# more viz 
+library(terra)
+library(tmap)
+
+# Set up maps
+tm_pre <- tm_shape(ntl_pre_mean) + 
+  tm_raster(title = "NTL Mean (Pre-Disaster)", palette = "brewer.yl_gn_bu", style = "cont", midpoint = NA) +
+  tm_layout(frame = FALSE)
+
+tm_post <- tm_shape(ntl_post_mean) + 
+  tm_raster(title = "NTL Mean (Post-Disaster)", palette = "brewer.yl_gn_bu", style = "cont", midpoint = NA) +
+  tm_layout(frame = FALSE)
+
+tm_pct_change <- tm_shape(ntl_pct_change) +
+  tm_raster(title = "NTL % Change", palette = "brewer.rd_yl_gn", style = "cont", midpoint = NA) +
+  tm_layout(frame = FALSE)
+ 
+
+# View all three maps side by side
+tmap_arrange(tm_pre, tm_post, tm_pct_change, ncol = 3)
 
 
 
