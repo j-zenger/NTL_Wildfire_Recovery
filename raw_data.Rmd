@@ -40,18 +40,7 @@ roi1 <- st_as_sfc(sb_ventura_bbox)
 ```{r Camp Fire plot}
 
 # Load in the zipped California fire perimeters folder
-roi <- st_read("~/Downloads/California_Fire_Perimeters_(all)/California_Fire_Perimeters_(all).shp") # Load shapefile
-
-f.roi <- roi %>%
-  filter(FIRE_NAME == 'CAMP', 
-         UNIT_ID == 'BTU')
-
-# Correctly write full sf object, not just geometry
-st_write(f.roi, 
-         dsn = "~/Local/Dissertation/camp_sf", 
-         layer = "camp_fire", 
-         driver = "ESRI Shapefile", 
-         append = FALSE)
+f.roi <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_sf/camp_fire.shp") # Load shapefile
 
 
 ```

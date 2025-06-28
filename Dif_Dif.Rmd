@@ -277,7 +277,7 @@ fect_model_log <- fect(
 )
 
 summary(fect_model_log)
-plot(fect_model, type = "gap") +
+plot(fect_model_log, type = "gap") +
   scale_y_continuous(limits = c(-0.5, 0.5))
 
 
@@ -286,10 +286,10 @@ plot(fect_model, type = "gap") +
 ```{r}
 
 plot(fect_model_log, type = "gap") +
-  scale_y_continuous(limits = c(-0.5, 0.5)) +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
   labs(y = "Estimated % Change in GDP (via NTL)",
        x = "Weeks Since Wildfire",
-       title = "Elasticity of GDP (via NTL) to Wildfire Exposure")
+       title = "Estimated GDP Change Post-Wildfire Using FECT (Interactive Fixed Effects)")
 
 
 
@@ -297,20 +297,46 @@ plot(fect_model_log, type = "gap") +
 
 ```{r}
 # Lets investigate the funky parts of this result
+# improve the plot: 
+library(ggplot2)
+library(dplyr)
 
-df_fect_clean %>%
-  filter(D == 1) %>%
-  group_by(id) %>%
-  summarise(mean = mean(log_mean, na.rm = TRUE)) %>%
-  arrange(desc(mean)) %>%
-  head(10) %>%
-  ggplot(aes(x = reorder(id, -mean), y = mean)) +
-  geom_bar(stat = "identity") +
-  coord_flip() +
-  labs(title = "Top 10 Units with Highest Log Mean Post-Fire",
-       x = "Unit ID",
-       y = "Mean Log GDP (via NTL)") +
-  theme_minimal()
+# Extract time 0 estimate and its p-value (if available)
+time0_idx <- which(fect_model_log$time == 0)
+
+mean_time0 <- fect_model_log$att[time0_idx]
+
+# If you have p-values vector for each time point, extract p-value at time 0
+# If not, approximate p-value from standard error and estimate (Z-test)
+# Example assuming standard errors in fect_model_log$att.boot.sd (replace if different)
+if (!is.null(fect_model_log$att.boot.sd)) {
+  se_time0 <- fect_model_log$att.boot.sd[time0_idx]
+  z_stat <- abs(mean_time0 / se_time0)
+  p_value_time0 <- 2 * (1 - pnorm(z_stat))
+} else {
+  p_value_time0 <- NA  # or manually specify
+}
+
+# Format p-value nicely
+p_value_label <- if (!is.na(p_value_time0)) {
+  paste0("p-value at time 0: ", signif(p_value_time0, 3))
+} else {
+  "p-value not available"
+}
+
+# Format mean estimate nicely
+mean_label <- paste0("Mean at time 0: ", round(mean_time0, 4))
+
+# Plot with annotations
+plot(fect_model_log, type = "gap") +
+  scale_y_continuous(limits = c(-0.2, 0.2)) +
+  labs(
+    y = "Estimated % Change in GDP (via NTL)",
+    x = "Weeks Since Wildfire",
+    title = "Estimated GDP Change Post-Wildfire Using FECT (Interactive Fixed Effects)"
+  ) +
+  annotate("text", x = 0, y = 0.18, label = mean_label, hjust = 0, size = 4, color = "blue") +
+  annotate("text", x = 0, y = 0.15, label = p_value_label, hjust = 0, size = 4, color = "red")
 
 
 

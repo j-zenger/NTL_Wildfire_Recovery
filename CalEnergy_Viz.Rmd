@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 
-calenergy <- read.csv("~/Local/Dissertation/calenergy.csv")
+calenergy <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/calenergy.csv")
 
 calenergy <- calenergy %>%
   filter(CountyName == "BUTTE")
@@ -22,11 +22,22 @@ calenergy <- calenergy %>%
 library(ggplot2)
 ggplot(calenergy, aes(x = Year, y = GWh, color = Sector)) +
   geom_line() +
-  labs(title = "Energy Usage Over Time in Butte County",
-       x = "Date",
-       y = "Energy Usage (kWh)") +
+  labs(
+    title = "Energy Usage Over Time in Butte County by Sector",
+    x = "Year",
+    y = "Energy Usage (GWh)",
+    caption = "Source: California Energy Commission"
+  ) +
   geom_vline(xintercept = 2019, linetype = "dashed", color = "red") +
-  theme_minimal()
+  scale_x_continuous(breaks = seq(min(calenergy$Year), max(calenergy$Year), by = 1)) +  # Labels for each year
+  theme_minimal() +
+  theme(
+    plot.caption = element_text(size = 8),
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels to prevent overlap
+  )
+
+
+
 
 
 ```

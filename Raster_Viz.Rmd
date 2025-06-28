@@ -73,7 +73,7 @@ names(c.combined_data) <- names(camp_data)
 
 # Check merged structure
 summary(c.combined_data)
-plot(c.combined_data[[100]]$raster)
+plot(c.combined_data[[3]]$raster)
 
 ```
 
@@ -83,7 +83,7 @@ plot(c.combined_data[[100]]$raster)
 cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
 
 # Load in the camp fire csv
-cbuff_csv <- read.csv("~/Local/Dissertation/CBuff_DailyMeanLuminosity.csv")
+cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
 
 # Load satellite data
 cbuff_data <- lapply(cbuff_outputs, rast)
@@ -151,10 +151,6 @@ for (group in weekly_composites) {
   # Store in list
   camp_weekly_rasters[[week_str]] <- composite
   
-  # Optional: Save to file
-  writeRaster(composite,
-              filename = paste0("~/Local/Dissertation/Weekly_Rasters", week_str, ".tif"),
-              overwrite = TRUE)
 }
 
 example_week_4 <- names(camp_weekly_rasters)[2]
@@ -218,10 +214,6 @@ for (group in cb.weekly_composites) {
   # Store in list
   cbuff_weekly_rasters[[week_str]] <- composite
   
-  # Optional: Save to file
-  writeRaster(composite,
-              filename = paste0("~/Local/Dissertation/CBuff_Weekly_Rasters", week_str, ".tif"),
-              overwrite = TRUE)
 }
 
 
