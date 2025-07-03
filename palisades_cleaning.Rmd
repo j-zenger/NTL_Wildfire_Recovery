@@ -201,9 +201,8 @@ f.camp_weekly <- f.camp_csv %>%
 # Plot the trendlines from both datasets
 ggplot(f.camp_weekly, aes(x = week, y = mean_NTL)) +
   geom_point() +
-  geom_smooth(method = "loess", se = FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+  labs(title = "Weekly Average NTL in Camp Fire Data, Inclusive of Fire Weeks",
        x = "Date",
        y = "NTL Value") +
   theme_minimal() 
@@ -237,9 +236,8 @@ f.cbuff_weekly <- f.cbuff_csv %>%
 # Plot the trendlines from both datasets
 ggplot(f.cbuff_weekly, aes(x = week, y = mean_NTL)) +
   geom_point() +
-  geom_smooth(method = "loess", se = FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+  labs(title = "Weekly Average NTL in Buffer Data, Inclusive of Fire Weeks",
        x = "Date",
        y = "NTL Value") +
   theme_minimal() 
@@ -262,7 +260,7 @@ f.camp_weekly$source <- "Camp Fire"
 c.combined_csv <- bind_rows(f.cbuff_csv, f.camp_csv)
 head(c.combined_csv)
 
-#` Combine the two dataframes
+# Combine the two dataframes
 c.combined_weekly <- bind_rows(f.camp_weekly, f.cbuff_weekly)
 
 
@@ -280,24 +278,23 @@ ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = so
   geom_point() +
   geom_smooth(method = "loess", se = FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+  labs(title = "Smooth Trend Line of Mean NTL Data: Camp Fire and Buffer Data",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4")) 
 
 # Create an indicator for exclusion period
 c.combined_weekly <- c.combined_weekly %>%
-  mutate(exclude_dates = week >= as.Date("2018-11-07") & week <= as.Date("2019-01-07"))
+  filter(week < as.Date("2018-11-04") | week > as.Date("2019-01-07"))
 
 # Plot: points for all data, smoothed lines only for non-excluded dates
 ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = source)) +
   geom_point() +
   geom_smooth(
-    data = filter(c.combined_weekly, !exclude_dates),
     method = "loess", se = FALSE
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Broken Trend Line of NTL Data (Excluding Nov 7– Jan 7 from LOESS)",
+  labs(title = "Broken Trend Line of NTL Data (Excluding Nov 4 – Jan 7)",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4")) +
@@ -311,7 +308,7 @@ ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = so
 # Create a plot that only shows trends from dates before November 8th
 # Filter the data to only include dates before November 8th
 f.camp_weeks_before <- c.combined_weekly %>%
-  filter(week < as.Date("2018-11-08"))
+  filter(week < as.Date("2018-11-04"))
 
 # Plot the trendlines from both datasets
 
@@ -330,14 +327,14 @@ ggplot(f.camp_days_before, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, 
 
 # plot the days and weeks after the fire 
 f.camp_days_after <- c.combined_csv %>%
-  filter(date >= as.Date("2019-01-07"))
+  filter(date > as.Date("2019-01-07"))
 
 
 # Plot the trendlines from both datasets
 ggplot(f.camp_days_after, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
   geom_line() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+  labs(title = "Smooth Trend Line of NTL Data after Jan 07 (Comparison)",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4"))
@@ -345,14 +342,14 @@ ggplot(f.camp_days_after, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, c
 
 # plot the weeks after the fire
 f.camp_weeks_after <- c.combined_weekly %>%
-  filter(week >= as.Date("2019-01-07"))
+  filter(week > as.Date("2019-01-07"))
 
 # Plot the trendlines from both datasets
 ggplot(f.camp_weeks_after, aes(x = week, y = mean_NTL, color = source, group = source)) +
   geom_point() +
   geom_smooth(method = "loess", se = FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of NTL Data (Comparison)",
+  labs(title = "Smooth Trend Line of NTL Data after Jan 07 (Comparison)",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4"))
@@ -369,14 +366,22 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 
+
+ntl_diff_data <- c.combined_csv %>%
+  select(date, source, Gap_Filled_DNB_BRDF_Corrected_NTL) %>%
+  pivot_wider(names_from = source, values_from = Gap_Filled_DNB_BRDF_Corrected_NTL) %>%
+  filter(!is.na(`Camp Fire`) & !is.na(Buffer)) %>%
+  mutate(NTL_diff = `Camp Fire` - Buffer)
+
 # Step 1: Compute the date gap to adjust post-fire dates
-end_before <- max(ntl_diff_data$date[ntl_diff_data$date < as.Date("2018-11-09")])
+end_before <- max(ntl_diff_data$date[ntl_diff_data$date < as.Date("2018-11-08")])
 start_after <- min(ntl_diff_data$date[ntl_diff_data$date >= as.Date("2019-01-07")])
 gap <- as.numeric(start_after - end_before) - 1  # to close the visual gap
 
+
 # Step 2: Adjust dates for visual continuity
 f.before <- ntl_diff_data %>%
-  filter(date < as.Date("2018-11-09")) %>%
+  filter(date < as.Date("2018-11-07")) %>%
   mutate(date_adjusted = date)
 
 f.after <- ntl_diff_data %>%
@@ -393,7 +398,7 @@ ggplot(f.all_adjusted, aes(x = date_adjusted, y = NTL_diff)) +
   geom_line(color = "lightgrey") +
   geom_vline(xintercept = as.numeric(break_adjusted), linetype = "dashed", color = "red") +
   annotate("text", x = break_adjusted + 2, y = max(f.all_adjusted$NTL_diff, na.rm = TRUE),
-           label = "Camp Fire\nNov 9–Jan 6 excluded", color = "red", hjust = 0) +
+           label = "Camp Fire\nNov 8–Jan 7 excluded", color = "red", hjust = 0) +
   labs(
     title = "Difference in NTL (Camp - Buffer) Before and After Camp Fire",
     x = "Date (Adjusted)",

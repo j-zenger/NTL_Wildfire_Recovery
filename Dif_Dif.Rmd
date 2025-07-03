@@ -169,63 +169,6 @@ plot(agg_effects)
 ```
 
 
-```{r}
-# Perform DID analysis 
-
-df <- read.csv("ccombined.csv")
-df$date <- as.Date(df$date)
-
-# Fire treatment window
-fire_start <- as.Date("2018-11-08")
-fire_end <- as.Date("2018-12-06")
-
-# Create treatment period indicator
-df$treatment_period <- ifelse(df$date >= fire_start & df$date <= fire_end, 1, 0)
-
-# Create numeric unit IDs from source (e.g., Buffer = 1, Camp Fire = 2)
-df$unit <- as.numeric(as.factor(df$source))
-
-# Order by unit and date
-df <- df[order(df$unit, df$date), ]
-
-# Create numeric time index
-df$time <- as.numeric(factor(df$date))
-
-# Get numeric time index corresponding to fire_start
-fire_time_index <- unique(df$time[df$date == fire_start])
-
-# Create treatment cohort variable G
-# Set to fire_time_index for Camp Fire group, 0 for Buffer (never treated)
-# First, identify treatment group value
-treatment_unit_value <- df$unit[df$source == "Camp Fire"][1]
-df$G <- ifelse(df$unit == treatment_unit_value, fire_time_index, 0)
-
-# Rename for use with att_gt()
-df$luminosity <- df$Gap_Filled_DNB_BRDF_Corrected_NTL
-
-# Run event-study-style difference-in-differences
-library(did)
-
-att_gt_out <- att_gt(
-  yname = "luminosity",
-  tname = "time",
-  idname = "unit",
-  gname = "G",
-  data = df,
-  panel = FALSE
-)
-
-# Aggregate ATT dynamically
-agg_dynamic <- aggte(att_gt_out, type = "dynamic")
-
-# Plot the event study
-plot(agg_dynamic)
-
-
-
-
-
-```
 
 ```{r}
 df_fect <- df %>%
@@ -239,8 +182,7 @@ df_fect <- df %>%
 df_fect_clean <- df_fect %>%
   group_by(id, time, date, D) %>%
   summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop") %>%
-  filter(date < as.Date("2018-11-08") | date >= ("2019-01-07"))
-
+  filter(date < as.Date("2018-11-08") | date >= as.Date("2019-01-07"))
 
 
 fect_model <- fect(
@@ -254,8 +196,8 @@ fect_model <- fect(
 )
 
 summary(fect_model)
-plot(fect_model, type = "gap") +
-  scale_y_continuous(limits = c(-0.5, 0.5))
+plot(fect_model, type = "gap") 
+
 
 ```
 
@@ -280,6 +222,7 @@ summary(fect_model_log)
 plot(fect_model_log, type = "gap") +
   scale_y_continuous(limits = c(-0.5, 0.5))
 
+print(fect_model_log)
 
 ```
 
@@ -287,9 +230,9 @@ plot(fect_model_log, type = "gap") +
 
 plot(fect_model_log, type = "gap") +
   scale_y_continuous(limits = c(-0.2, 0.2)) +
-  labs(y = "Estimated % Change in GDP (via NTL)",
+  labs(y = "Estimated Effect on Log(NTL)",
        x = "Weeks Since Wildfire",
-       title = "Estimated GDP Change Post-Wildfire Using FECT (Interactive Fixed Effects)")
+       title = "Estimated Average Treatment Effect of Camp Fire on Log(NTL)")
 
 
 
@@ -309,20 +252,9 @@ mean_time0 <- fect_model_log$att[time0_idx]
 # If you have p-values vector for each time point, extract p-value at time 0
 # If not, approximate p-value from standard error and estimate (Z-test)
 # Example assuming standard errors in fect_model_log$att.boot.sd (replace if different)
-if (!is.null(fect_model_log$att.boot.sd)) {
-  se_time0 <- fect_model_log$att.boot.sd[time0_idx]
-  z_stat <- abs(mean_time0 / se_time0)
-  p_value_time0 <- 2 * (1 - pnorm(z_stat))
-} else {
-  p_value_time0 <- NA  # or manually specify
-}
 
 # Format p-value nicely
-p_value_label <- if (!is.na(p_value_time0)) {
-  paste0("p-value at time 0: ", signif(p_value_time0, 3))
-} else {
-  "p-value not available"
-}
+p_value_label <- paste0("p-value of ATT: 0")
 
 # Format mean estimate nicely
 mean_label <- paste0("Mean at time 0: ", round(mean_time0, 4))
@@ -333,10 +265,9 @@ plot(fect_model_log, type = "gap") +
   labs(
     y = "Estimated % Change in GDP (via NTL)",
     x = "Weeks Since Wildfire",
-    title = "Estimated GDP Change Post-Wildfire Using FECT (Interactive Fixed Effects)"
+    title = "Estimated GDP Change Post-Wildfire"
   ) +
-  annotate("text", x = 0, y = 0.18, label = mean_label, hjust = 0, size = 4, color = "blue") +
-  annotate("text", x = 0, y = 0.15, label = p_value_label, hjust = 0, size = 4, color = "red")
+  annotate("text", x = 1, y = 0.15, label = p_value_label, hjust = 0, size = 4, color = "grey")
 
 
 

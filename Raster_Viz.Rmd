@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+
 ```{r load libraries, echo=FALSE, message=FALSE, warning=FALSE}
 # Load necessary libraries
 # Load packages
@@ -34,10 +35,85 @@ library(gridExtra)
 camp_buffer_sf <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_fire_buffer/camp_fire_buffer.shp")
 
 # Load in the fire roi shapefile
-f.roi <- st_read("~/Local/Dissertation/camp_sf/camp_fire.shp")
+f.roi <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_sf/camp_fire.shp")
 
 ```
 
+
+```{r}
+# Load raster file paths
+camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
+new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
+cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
+cb.new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_2_tiffs", full.names = TRUE)
+
+# Load CSVs
+camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
+cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
+
+# Helper: Load and aggregate rasters
+load_rasters <- function(file_paths, prefix_to_remove) {
+  rasters <- lapply(file_paths, function(path) {
+    r <- rast(path)
+    aggregate(r, fact = 3, fun = mean, na.rm = TRUE)  # aggregate pixels
+  })
+  names(rasters) <- tools::file_path_sans_ext(basename(file_paths))
+  names(rasters) <- gsub(prefix_to_remove, "", names(rasters))
+  rasters
+}
+
+camp_data <- load_rasters(c(camp_outputs, new_outputs), "Camp_")
+cbuff_data <- load_rasters(c(cbuff_outputs, cb.new_outputs), "CBuff_")
+
+# Extract and align dates
+get_week_df <- function(raster_list) {
+  tibble(
+    name = names(raster_list),
+    date = as.Date(names(raster_list)),
+    week = floor_date(as.Date(names(raster_list)), unit = "week", week_start = 1)
+  )
+}
+
+camp_weeks_df <- get_week_df(camp_data)
+cbuff_weeks_df <- get_week_df(cbuff_data)
+
+# Composite rasters weekly
+composite_by_week <- function(week_df, raster_list) {
+  week_df %>%
+    group_by(week) %>%
+    group_split() %>%
+    setNames(map_chr(., ~ as.character(unique(.$week)))) %>%
+    map(~ {
+      rasters_to_stack <- lapply(.$name, function(n) raster_list[[n]])
+      composite <- app(rast(rasters_to_stack), fun = mean, na.rm = TRUE)
+      composite
+    })
+}
+
+camp_weekly_rasters <- composite_by_week(camp_weeks_df, camp_data)
+cbuff_weekly_rasters <- composite_by_week(cbuff_weeks_df, cbuff_data)
+
+# Helper: convert to list with metadata
+combine_data <- function(raster_list, unit_label) {
+  lapply(names(raster_list), function(name) {
+    list(
+      raster = raster_list[[name]],
+      date = as.Date(name),
+      unit_type = unit_label
+    )
+  }) %>% setNames(names(raster_list))
+}
+
+c.combined_data <- combine_data(camp_weekly_rasters, "Treatment")
+cb.combined_data <- combine_data(cbuff_weekly_rasters, "Control")
+
+# Combine both treatment and control
+total_combined_data <- c(c.combined_data, cb.combined_data)
+
+
+
+
+```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load satellite data
@@ -121,37 +197,7 @@ plot(cb.combined_data[[24]]$raster)
 
 ```{r}
 
-library(terra)
-library(dplyr)
-library(lubridate)
 
-# Step 1: Create a data frame with dates and week identifiers
-dates_df <- tibble(
-  name = names(camp_data),
-  date = as.Date(name),
-  week = floor_date(as.Date(name), unit = "week", week_start = 1)  # ISO week
-)
-
-# Step 2: Group rasters by week
-weekly_composites <- dates_df %>%
-  group_by(week) %>%
-  group_split()
-
-# Step 3: Create weekly composites (mean raster)
-camp_weekly_rasters <- list()
-
-for (group in weekly_composites) {
-  week_str <- as.character(unique(group$week))
-  rasters_to_stack <- lapply(group$name, function(n) camp_data[[n]])
-  
-  # Stack and compute mean
-  stacked <- rast(rasters_to_stack)
-  composite <- app(stacked, fun = mean, na.rm = TRUE)
-  
-  # Store in list
-  camp_weekly_rasters[[week_str]] <- composite
-  
-}
 
 example_week_4 <- names(camp_weekly_rasters)[2]
 plot(camp_weekly_rasters[[example_week_4]],
@@ -161,7 +207,7 @@ example_week_3 <- names(camp_weekly_rasters)[28]
 plot(camp_weekly_rasters[[example_week_3]],
      main = paste("Weekly Composite:", example_week_3))
 
-example_week <- names(camp_weekly_rasters)[60]
+example_week <- names(camp_weekly_rasters)[31]
 plot(camp_weekly_rasters[[example_week]],
      main = paste("Weekly Composite:", example_week))
 
@@ -189,34 +235,6 @@ plot(rasters_to_plot,
 # Now create buffer composites
 # Step 1: Create a data frame with dates and week identifiers
 # Step 1: Create a data frame with dates and week identifiers
-cb.dates_df <- tibble(
-  name = names(cbuff_data),
-  date = as.Date(name),
-  week = floor_date(as.Date(name), unit = "week", week_start = 1)  # ISO week
-)
-
-# Step 2: Group rasters by week
-cb.weekly_composites <- cb.dates_df %>%
-  group_by(week) %>%
-  group_split()
-
-# Step 3: Create weekly composites (mean raster)
-cbuff_weekly_rasters <- list()
-
-for (group in cb.weekly_composites) {
-  week_str <- as.character(unique(group$week))
-  rasters_to_stack <- lapply(group$name, function(n) cbuff_data[[n]])
-  
-  # Stack and compute mean
-  stacked <- rast(rasters_to_stack)
-  composite <- app(stacked, fun = mean, na.rm = TRUE)
-  
-  # Store in list
-  cbuff_weekly_rasters[[week_str]] <- composite
-  
-}
-
-
 
 example_week_5 <- names(camp_weekly_rasters)[2]
 plot(cbuff_weekly_rasters[[example_week_5]],
@@ -263,7 +281,7 @@ target_weeks <- c(
   fire_start + weeks(1),
   fire_start + weeks(2),
   fire_start + weeks(3),
-  fire_start + months(3),
+  fire_start + months(6),
   fire_start + years(1)
 )
 
@@ -344,13 +362,13 @@ names(buffer_stack) <- c("Pre-Fire", "During Fire", "Post-Fire")
 
 par(mfrow = c(2, 3))
 
-plot(treatment_stack[[1]], main = "Treatment: Pre-Fire")
+plot(treatment_stack[[1]], main = "Treatment: 6 Months Before Fire")
 plot(treatment_stack[[2]], main = "Treatment: During Fire")
-plot(treatment_stack[[3]], main = "Treatment: Post-Fire")
+plot(treatment_stack[[3]], main = "Treatment: 1 Year After Fire")
 
-plot(buffer_stack[[1]], main = "Buffer: Pre-Fire")
+plot(buffer_stack[[1]], main = "Buffer: 6 Months Before Fire")
 plot(buffer_stack[[2]], main = "Buffer: During Fire")
-plot(buffer_stack[[3]], main = "Buffer: Post-Fire")
+plot(buffer_stack[[3]], main = "Buffer: 1 Year After Fire")
 
 
 
