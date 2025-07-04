@@ -360,3 +360,155 @@ tmap_arrange(tm_pre, tm_post, tm_pct_change, ncol = 3)
 
 
 ```
+
+
+```{r}
+library(ggplot2)
+library(patchwork)
+
+# Elasticity value
+elasticity <- 0.48
+
+# Extract ATT vectors for each model (make sure these exist)
+att_raw <- fect_model$att
+att_log <- fect_model_log$att
+att_asinh <- fect_model_asinh$att
+
+time_points <- fect_model$time  # assuming time points are the same for all
+
+# Filter out abnormal ATT values for plotting (threshold can be adjusted)
+threshold <- 1
+filter_raw <- abs(att_raw) <= threshold
+filter_log <- abs(att_log) <= threshold
+filter_asinh <- abs(att_asinh) <= threshold
+
+# Filtered data
+time_raw_clean <- time_points[filter_raw]
+att_raw_clean <- att_raw[filter_raw]
+
+time_log_clean <- time_points[filter_log]
+att_log_clean <- att_log[filter_log]
+
+time_asinh_clean <- time_points[filter_asinh]
+att_asinh_clean <- att_asinh[filter_asinh]
+
+# GDP change calculation
+delta_pct_ntl_raw <- (att_raw_clean / mean_ntl_pre) * 100
+delta_pct_gdp_raw <- delta_pct_ntl_raw * 0.3
+delta_pct_gdp_log <- att_log_clean * 100 * elasticity
+delta_pct_gdp_asinh <- att_asinh_clean * 100 * elasticity
+
+# Data frames for plotting
+gdp_raw_df <- data.frame(
+  time = time_raw_clean,
+  GDP_Raw = delta_pct_gdp_raw
+)
+
+gdp_log_df <- data.frame(
+  time = time_log_clean,
+  GDP_Log = delta_pct_gdp_log
+)
+
+gdp_asinh_df <- data.frame(
+  time = time_asinh_clean,
+  GDP_Asinh = delta_pct_gdp_asinh
+)
+
+# Plot Raw Model GDP
+p_raw <- ggplot(gdp_raw_df, aes(x = time, y = GDP_Raw)) +
+  geom_line(color = "blue") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    y = "",
+    x = "Weeks Since Wildfire",
+    title = "GDP Change from Raw NTL Model"
+  ) +
+  theme_minimal()
+
+# Plot Log Model GDP
+p_log <- ggplot(gdp_log_df, aes(x = time, y = GDP_Log)) +
+  geom_line(color = "darkred") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    y = "Estimated % Change in GDP",
+    x = "Weeks Since Wildfire",
+    title = "GDP Change from log(1 + NTL) Model"
+  ) +
+  theme_minimal()
+
+# Plot Asinh Model GDP
+p_asinh <- ggplot(gdp_asinh_df, aes(x = time, y = GDP_Asinh)) +
+  geom_line(color = "darkgreen") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    y = "",
+    x = "Weeks Since Wildfire",
+    title = "GDP Change from asinh(NTL) Model"
+  ) +
+  theme_minimal()
+
+# Combine all three plots vertically
+combined_plot <- p_raw / p_log / p_asinh +
+  plot_annotation(
+    title = "Estimated % Change in GDP from Wildfire Impact (Elasticity = 0.3)",
+    theme = theme(plot.title = element_text(size = 16, face = "bold"))
+  )
+
+combined_plot
+
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# Extract raw ATT estimates (make sure this works for you)
+att_raw <- fect_model$att  # or use appropriate extraction for your model
+time_points <- fect_model$time  # your time vector
+
+# Filter abnormal values (adjust threshold as needed)
+threshold <- 1
+filter_raw <- abs(att_raw) <= threshold
+time_raw_clean <- time_points[filter_raw]
+att_raw_clean <- att_raw[filter_raw]
+
+library(ggplot2)
+
+# Elasticities and their labels
+elasticities <- c(0.3, 0.48, 0.8, 0.1)
+elasticity_labels <- c(
+  "0.3 (Literature Standard)",
+  "0.48 (Empirical Measurement)",
+  "0.8",
+  "0.1"
+)
+
+# Calculate GDP % change for each elasticity
+gdp_changes <- lapply(elasticities, function(e) att_raw_clean * 100 * e)
+
+# Create dataframe for plotting
+df_plot <- data.frame(
+  time = rep(time_raw_clean, times = length(elasticities)),
+  GDP_change = unlist(gdp_changes),
+  Elasticity = factor(
+    rep(elasticity_labels, each = length(time_raw_clean)),
+    levels = elasticity_labels
+  )
+)
+
+# Plot with 4 elasticity lines and custom legend labels
+ggplot(df_plot, aes(x = time, y = GDP_change, color = Elasticity)) +
+  geom_line(linewidth = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Estimated % Change in GDP from Raw NTL Model",
+    x = "Weeks Since Wildfire",
+    y = "Estimated % Change in GDP",
+    color = "Elasticity"
+  ) +
+  theme_minimal()
+
+
+
+```

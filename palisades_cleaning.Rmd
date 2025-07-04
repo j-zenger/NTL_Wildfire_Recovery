@@ -327,7 +327,7 @@ ggplot(f.camp_days_before, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, 
 
 # plot the days and weeks after the fire 
 f.camp_days_after <- c.combined_csv %>%
-  filter(date > as.Date("2019-01-07"))
+  filter(date > as.Date("2019-02-10"))
 
 
 # Plot the trendlines from both datasets
@@ -342,7 +342,7 @@ ggplot(f.camp_days_after, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, c
 
 # plot the weeks after the fire
 f.camp_weeks_after <- c.combined_weekly %>%
-  filter(week > as.Date("2019-01-07"))
+  filter(week > as.Date("2019-02-10"))
 
 # Plot the trendlines from both datasets
 ggplot(f.camp_weeks_after, aes(x = week, y = mean_NTL, color = source, group = source)) +
@@ -375,7 +375,7 @@ ntl_diff_data <- c.combined_csv %>%
 
 # Step 1: Compute the date gap to adjust post-fire dates
 end_before <- max(ntl_diff_data$date[ntl_diff_data$date < as.Date("2018-11-08")])
-start_after <- min(ntl_diff_data$date[ntl_diff_data$date >= as.Date("2019-01-07")])
+start_after <- min(ntl_diff_data$date[ntl_diff_data$date >= as.Date("2019-02-10")])
 gap <- as.numeric(start_after - end_before) - 1  # to close the visual gap
 
 
@@ -385,13 +385,13 @@ f.before <- ntl_diff_data %>%
   mutate(date_adjusted = date)
 
 f.after <- ntl_diff_data %>%
-  filter(date >= as.Date("2019-01-07")) %>%
+  filter(date >= as.Date("2019-02-10")) %>%
   mutate(date_adjusted = date - gap)
 
 f.all_adjusted <- bind_rows(f.before, f.after)
 
 # Step 3: Add dashed line at visual break point
-break_adjusted <- max(f.before$date_adjusted) + 1
+break_adjusted <- max(f.before$date_adjusted)
 
 # Step 4: Plot
 ggplot(f.all_adjusted, aes(x = date_adjusted, y = NTL_diff)) +
