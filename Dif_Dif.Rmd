@@ -205,6 +205,11 @@ plot(fect_model, type = "gap") +
        x = "Weeks Since Wildfire",
        title = "Estimated Average Treatment Effect of Camp Fire on NTL")
 
+print(fect_model)
+
+
+
+
 
 ```
 

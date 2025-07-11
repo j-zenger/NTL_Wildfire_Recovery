@@ -121,7 +121,8 @@ names(c.combined_data) <- names(camp_data)
 summary(c.combined_data)
 plot(c.combined_data[[209]]$raster)
 
-
+# print mean NTL after 2019-02-10 for the camp csv using Gap Filled 
+mean_ntl_after <- mean(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[camp_csv$date > "2019-02-10"], na.rm = TRUE)
 
 
 ```
@@ -285,7 +286,7 @@ ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = so
 
 # Create an indicator for exclusion period
 c.combined_weekly <- c.combined_weekly %>%
-  filter(week < as.Date("2018-11-04") | week > as.Date("2019-01-07"))
+  filter(week < as.Date("2018-11-04") | week > as.Date("2019-02-10"))
 
 # Plot: points for all data, smoothed lines only for non-excluded dates
 ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = source)) +
@@ -294,7 +295,7 @@ ggplot(c.combined_weekly, aes(x = week, y = mean_NTL, color = source, group = so
     method = "loess", se = FALSE
   ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Broken Trend Line of NTL Data (Excluding Nov 4 – Jan 7)",
+  labs(title = "Broken Trend Line of NTL Data (Excluding Nov 4 – Feb 10)",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4")) +
@@ -318,9 +319,10 @@ f.camp_days_before <- c.combined_csv %>%
 
 # Plot the trendlines from both datasets
 ggplot(f.camp_days_before, aes(x = date, y = Gap_Filled_DNB_BRDF_Corrected_NTL, color = source, group = source)) +
-  geom_line() +
+  geom_point() +
+   geom_smooth(method = "loess", se = FALSE) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Smooth Trend Line of Before-Fire NTL Data (Comparison)",
+  labs(title = "Comparison of Mean NTL Values Before Camp Fire",
        x = "Date",
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4")) 
@@ -354,8 +356,11 @@ ggplot(f.camp_weeks_after, aes(x = week, y = mean_NTL, color = source, group = s
        y = "NTL Value") +
   scale_color_manual(values = c("blue4", "green4"))
 
-
-
+#Print the mean NTL from the time period after the fire 
+mean_ntl_after <- mean(f.camp_days_after$Gap_Filled_DNB_BRDF_Corrected_NTL, na.rm = TRUE)
+mean_ntl_after
+# Print the mean NTL from the time period before the fire
+mean_ntl_before <- mean(f.camp_days_before$Gap_Filled_DNB_BRDF_Corrected_NTL, na.rm = TRUE)
 ```
 
 
@@ -407,6 +412,18 @@ ggplot(f.all_adjusted, aes(x = date_adjusted, y = NTL_diff)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+ntl_diff_f <- ntl_diff_data %>%
+  filter(date < as.Date("2018-11-08"))
+
+# Print the mean NTL_diff before the fire 
+mean_ntl_diff <- mean(ntl_diff_f$NTL_diff, na.rm = TRUE)
+mean_ntl_diff
+
+# Print the mean NTL_diff after the fire
+ntl_diff_a <- ntl_diff_data %>%
+  filter(date >= as.Date("2019-02-10"))
+mean_ntl_diff_after <- mean(ntl_diff_a$NTL_diff, na.rm = TRUE)
+mean_ntl_diff_after
 
 
 

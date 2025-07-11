@@ -120,8 +120,9 @@ camp_quarterly_counts <- lapply(camp_quarterly_rasters, function(r) {
 butte_data <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Butte_DailyMeanLuminosity_2.csv")
 
 # filter dates 2018-11-07 to 2018-12-07
-ntl_pre <- median(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[camp_csv$date <= "2018-11-07"])
-ntl_post <- 0.3768 
+ntl_pre <- mean(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[camp_csv$date <= "2018-11-07"])
+ntl_post <- 0.353295131127617
+
 
 # dont know why this isnt working
 summary(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[
@@ -367,7 +368,7 @@ library(ggplot2)
 library(patchwork)
 
 # Elasticity value
-elasticity <- 0.48
+elasticity <- 0.66
 
 # Extract ATT vectors for each model (make sure these exist)
 att_raw <- fect_model$att
@@ -468,7 +469,7 @@ att_raw <- fect_model$att  # or use appropriate extraction for your model
 time_points <- fect_model$time  # your time vector
 
 # Filter abnormal values (adjust threshold as needed)
-threshold <- 1
+threshold <- 0.5
 filter_raw <- abs(att_raw) <= threshold
 time_raw_clean <- time_points[filter_raw]
 att_raw_clean <- att_raw[filter_raw]
@@ -476,12 +477,12 @@ att_raw_clean <- att_raw[filter_raw]
 library(ggplot2)
 
 # Elasticities and their labels
-elasticities <- c(0.3, 0.48, 0.8, 0.1)
+elasticities <- c(0.1, 0.3, 0.66, 0.8)
 elasticity_labels <- c(
+  "0.1",
   "0.3 (Literature Standard)",
-  "0.48 (Empirical Measurement)",
-  "0.8",
-  "0.1"
+  "0.66 (Empirical Measurement)",
+  "0.8"
 )
 
 # Calculate GDP % change for each elasticity
@@ -509,6 +510,6 @@ ggplot(df_plot, aes(x = time, y = GDP_change, color = Elasticity)) +
   ) +
   theme_minimal()
 
-
+fect_model$att
 
 ```
