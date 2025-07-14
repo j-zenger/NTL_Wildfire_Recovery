@@ -9,10 +9,21 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r Load libraries}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
 
+```
+
+```{r California Energy Commission Viz}
+
+# In this code chunk, I will visualize energy usage in Butte County, California, over time.
+
+# Load the dataset
 calenergy <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/calenergy.csv")
 
+# Filter dataset for Butte County
 calenergy <- calenergy %>%
   filter(CountyName == "BUTTE")
 

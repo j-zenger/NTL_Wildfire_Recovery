@@ -1,0 +1,88 @@
+---
+title: "Tmap of Camp Fire and Buffer"
+author: "Me"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Load libraries, echo=FALSE, message=FALSE, warning=FALSE}
+#### Setup
+# Load packages
+library(geodata)
+library(sf)
+library(terra)
+library(ggplot2)
+library(tidyterra)
+library(lubridate)
+library(dplyr)
+library(tmap)
+library(raster)
+library(rnaturalearth)
+
+```
+
+
+```{r Camp Fire shapefile, echo=FALSE, message=FALSE, warning=FALSE}
+# Load in the zipped California fire perimeters folder
+f.roi <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_sf/camp_fire.shp") # Load shapefile
+
+```
+
+```{r Camp Fire plot, message=FALSE, warning=FALSE}
+# Create a buffer around the fire perimeter and clip it to the coastline
+# Load coastline data
+
+buffer_c <- function(f.roi, buffer_km = 10) {
+  if (nrow(f.roi) == 0) {
+    stop("No matching fire perimeter found.")
+  }
+
+  # Create buffer around the fire perimeter
+  camp_buffer_sf <- st_buffer(f.roi, dist = buffer_km * 1000)  # km to meters
+
+  # Remove the fire perimeter from the buffer (to get just the ring)
+  camp_fire_overlap <- st_difference(camp_buffer_sf, f.roi)
+
+  return(camp_fire_overlap)
+}
+
+# Load necessary package
+library(sf)
+
+# Ensure the output directory exists
+output_dir <- "~/Local/Dissertation"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)  # Create directory if it doesn't exist
+}
+
+# Generate buffer
+camp_buffer_sf <- buffer_c(f.roi, buffer_km = 10)
+
+# Keep only geometry
+camp_buffer_sf <- dplyr::select(camp_buffer_sf, geometry)
+
+# Output directory
+output_dir <- "~/Local/Dissertation"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Save buffer as Shapefile
+shapefile_name <- "camp_fire_buffer"
+shapefile_path <- file.path(output_dir, shapefile_name)
+st_write(camp_buffer_sf, dsn = shapefile_path, driver = "ESRI Shapefile", append = FALSE)
+
+print(paste("Shapefile successfully saved to:", shapefile_path))
+
+# Plot
+tmap_mode("view")
+tm_shape(camp_buffer_sf) + 
+  tm_polygons(col = "blue", alpha = 0.3, border.col = "blue") + 
+  tm_shape(f.roi) + 
+  tm_polygons(col = "red", alpha = 0.5, border.col = "red") + 
+  tm_basemap("OpenStreetMap") + 
+  tm_layout(title = "Camp Fire and Buffer")
+
+```
