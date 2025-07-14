@@ -10,125 +10,29 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r Load libraries}
+#Load necessary libraries
 library(terra)
-library(sf)
-library(exactextractr)
-
-# Skip first 10 lines of metadata and read grid
-cloud_data <- read.csv("~/Downloads/output_01.csv", skip = 10, header = FALSE)
-
-grid_vector <- unlist(cloud_data)
-grid_matrix <- matrix(grid_vector, nrow = 360, ncol = 720, byrow = TRUE)
-
-# Step 2: Create a raster
-# Define raster grid: global extent, 0.5-degree resolution
-r <- rast(nrows = 360, ncols = 720, xmin = -180, xmax = 180, ymin = -90, ymax = 90)
-values(r) <- as.vector(t(grid_matrix))  # transpose to match raster orientation
-
-# Step 3: Load and align your shapefile
-shp <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_sf/camp_fire.shp")
-shp <- st_transform(shp, crs(r))  # Match CRS
-
-# Step 4: Compute area-weighted mean using exactextractr
-mean_val <- exact_extract(r, shp)
-
-df <- exact_extract(r, shp, include_cols = NULL)[[1]]
-weighted_mean <- sum(df$value * df$coverage_fraction) / sum(df$coverage_fraction)
-
-print(weighted_mean)
+library(lubridate)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+library(tibble)
+library(patchwork)
 
 ```
 
-```{r}
-# Load in monthly NTL data 
-# Step 3: Create weekly composites (mean raster)
-dates_df <- tibble(
-  name = names(camp_data),
-  date = as.Date(name),
-  month = floor_date(as.Date(name), unit = "month", week_start = 1)  # ISO week
-)
+```{r Estimate elasticity, message=FALSE, warning=FALSE}
 
-# Step 2: Group rasters by week
-monthly_composites <- dates_df %>%
-  group_by(month) %>%
-  group_split()
+# In this part of the code, I will estimate the elasticity of NTL to GDP using the measured estimate of GDP percentage loss from the fire in Butte County.
 
-camp_monthly_rasters <- list()
-
-for (group in monthly_composites) {
-  month_str <- as.character(unique(group$month))
-  rasters_to_stack <- lapply(group$name, function(n) camp_data[[n]])
-  
-  # Stack and compute mean
-  stacked <- rast(rasters_to_stack)
-  composite <- app(stacked, fun = mean, na.rm = TRUE)
-  
-  # Store in list
-  camp_monthly_rasters[[month_str]] <- composite
-}
-
-months_sorted <- sort(names(camp_monthly_rasters))
-camp_monthly_stack <- rast(camp_monthly_rasters[months_sorted])
-names(camp_monthly_stack) <- months_sorted  # So dates are clear
-
-
-# Create a date-to-quarter mapping
-month_dates <- as.Date(names(camp_monthly_rasters))
-quarters <- paste0(year(month_dates), "-Q", quarter(month_dates))
-
-# Map months to quarters
-quarter_groups <- split(seq_along(quarters), quarters)
-
-# Aggregate monthly rasters to quarterly means
-camp_quarterly_rasters <- lapply(quarter_groups, function(idx) {
-  app(camp_monthly_stack[[idx]], fun = mean, na.rm = TRUE)
-})
-names(camp_quarterly_rasters) <- names(quarter_groups)
-
-
-```
-
-```{r}
-
-camp_quarterly_growth <- list()
-
-for (i in 2:length(camp_quarterly_rasters)) {
-  q_now <- camp_quarterly_rasters[[i]]
-  q_prev <- camp_quarterly_rasters[[i - 1]]
-  
-  # Relative growth: (new - old) / old
-  growth <- (q_now - q_prev) / (q_prev + 1e-6)  # small constant prevents division by zero
-
-  name <- paste0(names(camp_quarterly_rasters)[i - 1], "_to_", names(camp_quarterly_rasters)[i])
-  camp_quarterly_growth[[name]] <- growth
-}
-
-```
-
-```{r}
-
-# Count number of valid NTL observations per quarter
-camp_quarterly_counts <- lapply(camp_quarterly_rasters, function(r) {
-  sum(!is.na(values(r)))
-})
-
-```
-
-```{r}
 # Load in Butte County NTL data 
 butte_data <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Butte_DailyMeanLuminosity_2.csv")
 
 # filter dates 2018-11-07 to 2018-12-07
 ntl_pre <- mean(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[camp_csv$date <= "2018-11-07"])
-ntl_post <- 0.353295131127617
-
-
-# dont know why this isnt working
-summary(camp_csv$Gap_Filled_DNB_BRDF_Corrected_NTL[
-  (camp_csv$date > as.Date("2019-01-07")) & (camp_csv$date < as.Date("2019-11-08"))
-])
-
+ntl_post <- 0.353295131127617 # mean NTL value of the post-disaster period (2019-01-07 to 2019-11-08)
 
 
 # Calculate percentage change
@@ -137,235 +41,18 @@ pct_change_ntl <- (ntl_post - ntl_pre) / ntl_pre * 100
 # Load in GDP loss
 gdp_pct_change <- -47.4
 
-# Step 5: Calculate elasticity
+# Calculate elasticity
 elasticity <- pct_change_ntl / gdp_pct_change
 
-# Step 6: Print the result
+# Print the result
 cat("Estimated NTL–GDP Elasticity:", round(elasticity, 3), "\n")
 
 
 ```
 
-```{r}
-# Now to use the elasticity value that is standard (0.3) for estimates of GDP loss
-# Load required libraries
-library(terra)
-library(dplyr)
-library(lubridate)
-library(purrr)
-library(tibble)
-
-# ---- Step 0: Load raster file paths and CSVs ----
-camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
-new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
-cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
-cb.new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_2_tiffs", full.names = TRUE)
-
-camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
-cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
-
-# ---- Step 1: Load and aggregate raster stacks ----
-load_rasters <- function(file_paths, prefix_to_remove) {
-  rasters <- lapply(file_paths, function(path) {
-    r <- rast(path)
-    aggregate(r, fact = 3, fun = mean, na.rm = TRUE)  # coarsen resolution
-  })
-  names(rasters) <- tools::file_path_sans_ext(basename(file_paths))
-  names(rasters) <- gsub(prefix_to_remove, "", names(rasters))
-  rasters
-}
-
-camp_data <- load_rasters(c(camp_outputs, new_outputs), "Camp_")
-cbuff_data <- load_rasters(c(cbuff_outputs, cb.new_outputs), "CBuff_")
-
-# ---- Step 2: Extract and group by month ----
-get_monthly_df <- function(raster_list) {
-  tibble(
-    name = names(raster_list),
-    date = as.Date(names(raster_list)),
-    month = floor_date(as.Date(names(raster_list)), unit = "month")
-  )
-}
-
-camp_month_df <- get_monthly_df(camp_data)
-cbuff_month_df <- get_monthly_df(cbuff_data)
-
-# ---- Step 3: Composite rasters by month ----
-composite_by_month <- function(month_df, raster_list) {
-  month_df %>%
-    group_by(month) %>%
-    group_split() %>%
-    setNames(map_chr(., ~ as.character(unique(.$month)))) %>%
-    map(~ {
-      rasters_to_stack <- lapply(.$name, function(n) raster_list[[n]])
-      composite <- app(rast(rasters_to_stack), fun = mean, na.rm = TRUE)
-      composite
-    })
-}
-
-camp_monthly_rasters <- composite_by_month(camp_month_df, camp_data)
-cbuff_monthly_rasters <- composite_by_month(cbuff_month_df, cbuff_data)
-
-
-# ---- Step 4: Add metadata and combine data ----
-combine_data <- function(raster_list, unit_label) {
-  lapply(names(raster_list), function(name) {
-    list(
-      raster = raster_list[[name]],
-      date = as.Date(name),
-      unit_type = unit_label
-    )
-  }) %>% setNames(names(raster_list))
-}
-
-c.combined_data <- combine_data(camp_monthly_rasters, "Treatment")
-cb.combined_data <- combine_data(cbuff_monthly_rasters, "Control")
-
-total_combined_data <- c(c.combined_data, cb.combined_data)
-
-# ---- Step 5: Convert rasters to pixel-level data ----
-raster_to_df <- function(entry) {
-  df <- as.data.frame(entry$raster, xy = TRUE, cells = TRUE)
-  if (nrow(df) == 0) return(NULL)
-  df$date <- entry$date
-  df$unit_type <- entry$unit_type
-  df
-}
-
-panel_pixel_data <- map_dfr(total_combined_data, raster_to_df)
-
-# ---- Step 6: Compute Pre/Post Means and % Change for Treatment Area ----
-disaster_start <- as.Date("2018-11-08")
-disaster_finish <- as.Date("2019-01-07")
-pre_month <- names(camp_monthly_rasters)[as.Date(names(camp_monthly_rasters)) < disaster_start]
-post_month <- names(camp_monthly_rasters)[as.Date(names(camp_monthly_rasters)) >= disaster_finish]
-
-# filter post month to only include the 12 months after the disaster instead of 24
-post_month <- post_month[1:12]
-
-pre_stack <- rast(camp_monthly_rasters[pre_month])
-post_stack <- rast(camp_monthly_rasters[post_month])
-
-ntl_pre_mean <- mean(pre_stack, na.rm = TRUE)
-ntl_post_mean <- mean(post_stack, na.rm = TRUE)
-
-ntl_pct_change <- ((ntl_post_mean - ntl_pre_mean) / ntl_pre_mean) * 100
-
-# ---- Step 7: Estimate GDP Change Using Elasticities ----
-emp_elasticity <- 0.48 # empirical elasticity from butte county numbers
-gdp_change_emp <- ntl_pct_change / emp_elasticity
-gdp_change_fixed <- ntl_pct_change / 0.3
-
-
-library(terra)
-library(ggplot2)
-
-# Convert to data frame for plotting
-df_change <- as.data.frame(ntl_pct_change, xy = TRUE)
-names(df_change)[3] <- "pct_change"
-
-ggplot(df_change, aes(x = x, y = y, fill = pct_change)) +
-  geom_raster() +
-  scale_fill_gradient2(low = "red", mid = "white", high = "green", midpoint = 0) +
-  labs(title = "Percent Change in NTL (Pre vs Post Disaster)", fill = "% Change") +
-  theme_minimal()
-
-
-```
-```{r}
-# now do it with the csv data 
-
-camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
-cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
-
-library(dplyr)
-library(lubridate)
-
-# Step 1: Aggregate daily NTL to monthly
-camp_monthly_csv <- camp_csv %>%
-  mutate(date = as.Date(date)) %>%
-  group_by(month = floor_date(date, "month")) %>%
-  summarise(mean_ntl = mean(Gap_Filled_DNB_BRDF_Corrected_NTL, na.rm = TRUE))
-
-# Step 2: Calculate pre-fire NTL average
-pre_fire_avg_ntl <- camp_monthly_csv %>%
-  filter(month < as.Date("2018-11-08")) %>%
-  summarise(pre_ntl = mean(mean_ntl, na.rm = TRUE)) %>%
-  pull(pre_ntl)
-
-# Step 3: Apply elasticity to each post-fire month
-fire_gdp_change <- camp_monthly_csv %>%
-  filter(month > as.Date("2019-01-01")) %>%
-  mutate(
-    ntl_pct_change = ((mean_ntl - pre_fire_avg_ntl) / pre_fire_avg_ntl) * 100,
-    gdp_pct_change_empirical = ntl_pct_change / emp_elasticity,
-    gdp_pct_change_fixed = ntl_pct_change / 0.3
-  )
-
-# Step 4: View results
-print(fire_gdp_change %>% select(month, ntl_pct_change, gdp_pct_change_empirical, gdp_pct_change_fixed))
-
-
-```
-```{r}
-# Lets visualize
-library(ggplot2)
-
-fire_gdp_change <- camp_monthly_csv %>%
-  filter(month > as.Date("2019-01-01")) %>%
-  mutate(
-    ntl_pct_change = ((mean_ntl - pre_fire_avg_ntl) / pre_fire_avg_ntl) * 100,
-    gdp_pct_change_empirical = ntl_pct_change / emp_elasticity,
-    gdp_pct_change_fixed = ntl_pct_change / 0.3
-  )
-
-ggplot(fire_gdp_change, aes(x = month)) +
-
-  # GDP trend lines (with breaks)
-  geom_line(aes(y = gdp_pct_change_empirical, color = "Empirical Elasticity")) +
-  geom_line(aes(y = gdp_pct_change_fixed, color = "Standard Elasticity (0.3)")) +
-  labs(title = "Estimated Monthly GDP Change",
-       y = "GDP Change (%)",
-       x = "Month",
-       color = "Elasticity Type") +
-  theme_minimal()
-
-
-
-
-
-```
-
-```{r}
-# more viz 
-library(terra)
-library(tmap)
-
-# Set up maps
-tm_pre <- tm_shape(ntl_pre_mean) + 
-  tm_raster(title = "NTL Mean (Pre-Disaster)", palette = "brewer.yl_gn_bu", style = "cont", midpoint = NA) +
-  tm_layout(frame = FALSE)
-
-tm_post <- tm_shape(ntl_post_mean) + 
-  tm_raster(title = "NTL Mean (Post-Disaster)", palette = "brewer.yl_gn_bu", style = "cont", midpoint = NA) +
-  tm_layout(frame = FALSE)
-
-tm_pct_change <- tm_shape(ntl_pct_change) +
-  tm_raster(title = "NTL % Change", palette = "brewer.rd_yl_gn", style = "cont", midpoint = NA) +
-  tm_layout(frame = FALSE)
- 
-
-# View all three maps side by side
-tmap_arrange(tm_pre, tm_post, tm_pct_change, ncol = 3)
-
-
-
-```
-
-
-```{r}
-library(ggplot2)
-library(patchwork)
+```{r GDP and NTL Plots, message=FALSE, warning=FALSE}
+# In this code section, I will plot the NTL data and the GDP data to visualize the relationship between them.
+# The data from this model comes from the results of the fect models found in Dif_Dif.Rmd. This should be run before running this code. 
 
 # Elasticity value
 elasticity <- 0.66
@@ -387,6 +74,7 @@ filter_asinh <- abs(att_asinh) <= threshold
 time_raw_clean <- time_points[filter_raw]
 att_raw_clean <- att_raw[filter_raw]
 
+# Filtered log and asinh data
 time_log_clean <- time_points[filter_log]
 att_log_clean <- att_log[filter_log]
 
@@ -457,14 +145,12 @@ combined_plot <- p_raw / p_log / p_asinh +
 
 combined_plot
 
-
-
 ```
 
-```{r}
-library(ggplot2)
+```{r Final Viz, message=FALSE, warning=FALSE}
+# In this code section, I will create a final visualization of the GDP change estimates from the raw NTL model, using the elasticity values calculated earlier.
 
-# Extract raw ATT estimates (make sure this works for you)
+# Extract raw ATT estimates 
 att_raw <- fect_model$att  # or use appropriate extraction for your model
 time_points <- fect_model$time  # your time vector
 

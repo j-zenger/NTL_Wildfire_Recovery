@@ -1,5 +1,5 @@
 ---
-title: "raster_viz"
+title: "Raster Visualization"
 author: "Josie Zenger"
 date: "`r Sys.Date()`"
 output: html_document
@@ -10,10 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r load libraries, echo=FALSE, message=FALSE, warning=FALSE}
+```{r Load libraries, echo=FALSE, message=FALSE, warning=FALSE}
 # Load necessary libraries
 # Load packages
-library(blackmarbler)
 library(geodata)
 library(sf)
 library(terra)
@@ -30,6 +29,8 @@ library(tools)
 library(utils)
 library(plotly)
 library(gridExtra)
+library(tidyr)
+library(purrr)
 
 # Load in camp buffer shapefile 
 camp_buffer_sf <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_fire_buffer/camp_fire_buffer.shp")
@@ -40,7 +41,7 @@ f.roi <- st_read("~/Local/Dissertation/NTL_Wildfire_Recovery/camp_sf/camp_fire.s
 ```
 
 
-```{r}
+```{r Load and Process Data, message=FALSE, warning=FALSE}
 # Load raster file paths
 camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
 new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
@@ -51,7 +52,7 @@ cb.new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_2
 camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
 cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
 
-# Helper: Load and aggregate rasters
+# Load and aggregate rasters
 load_rasters <- function(file_paths, prefix_to_remove) {
   rasters <- lapply(file_paths, function(path) {
     r <- rast(path)
@@ -62,6 +63,7 @@ load_rasters <- function(file_paths, prefix_to_remove) {
   rasters
 }
 
+# Combine the additional years of data that I extracted (this is not a necessary step in most cases)
 camp_data <- load_rasters(c(camp_outputs, new_outputs), "Camp_")
 cbuff_data <- load_rasters(c(cbuff_outputs, cb.new_outputs), "CBuff_")
 
@@ -73,11 +75,10 @@ get_week_df <- function(raster_list) {
     week = floor_date(as.Date(names(raster_list)), unit = "week", week_start = 1)
   )
 }
-
 camp_weeks_df <- get_week_df(camp_data)
 cbuff_weeks_df <- get_week_df(cbuff_data)
 
-# Composite rasters weekly
+# Composite rasters by week
 composite_by_week <- function(week_df, raster_list) {
   week_df %>%
     group_by(week) %>%
@@ -93,7 +94,7 @@ composite_by_week <- function(week_df, raster_list) {
 camp_weekly_rasters <- composite_by_week(camp_weeks_df, camp_data)
 cbuff_weekly_rasters <- composite_by_week(cbuff_weeks_df, cbuff_data)
 
-# Helper: convert to list with metadata
+# Convert to list with metadata
 combine_data <- function(raster_list, unit_label) {
   lapply(names(raster_list), function(name) {
     list(
@@ -107,15 +108,13 @@ combine_data <- function(raster_list, unit_label) {
 c.combined_data <- combine_data(camp_weekly_rasters, "Treatment")
 cb.combined_data <- combine_data(cbuff_weekly_rasters, "Control")
 
-# Combine both treatment and control
+# Combine both treatment and control rasters
 total_combined_data <- c(c.combined_data, cb.combined_data)
-
-
-
 
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r Camp Fire data, echo=FALSE, message=FALSE, warning=FALSE}
+# This code already exists in the Camp_Buffer_CSV_Viz file, but is useful to have on hand if needed for raster visualization.
 # Load satellite data
 camp_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CampFire_2_TIFFs", full.names = TRUE)
 
@@ -133,7 +132,7 @@ c.file_names <- tools::file_path_sans_ext(basename(camp_outputs))
 names(camp_data) <- c.file_names
 
 
-# Get rid of the ThomasFire_ prefix
+# Get rid of the Camp_ prefix
 names(camp_data) <- gsub("Camp_", "", names(camp_data))
 
 # Merge rasters with their corresponding metadata
@@ -153,7 +152,9 @@ plot(c.combined_data[[3]]$raster)
 
 ```
 
-```{r}
+```{r Buffer data, echo=FALSE, message=FALSE, warning=FALSE}
+# This code already exists in the Camp_Buffer_CSV_Viz file, but is useful to have on hand if needed for raster visualization.
+
 # Load buffer rasters
 # Load satellite data
 cbuff_outputs <- list.files("~/Local/Dissertation/CBuff_tiffs", full.names = TRUE)
@@ -190,13 +191,11 @@ names(cb.combined_data) <- names(cbuff_data)
 summary(cb.combined_data)
 plot(cb.combined_data[[24]]$raster)
 
-
-
-
 ```
 
-```{r}
+```{r Example Viz, warning=FALSE, message=FALSE}
 
+# In this section of code, I will visualize the weekly composites of the Camp Fire data and the buffer data. This was mostly an exploration of how different weeks looked and what would be appropriate to put into the final visualization. 
 
 
 example_week_4 <- names(camp_weekly_rasters)[2]
@@ -224,19 +223,13 @@ plot(rasters_to_plot,
               paste("Weekly Composite:", example_week)),
      nc = 1)
 
-
-
-# Weeks of interest: 2, 15, 27, 28, 29, 30, 31, 41, 54
-
 ```
 
-```{r}
+```{r Buffer Example Viz, warning=FALSE, message=FALSE}
 
-# Now create buffer composites
-# Step 1: Create a data frame with dates and week identifiers
-# Step 1: Create a data frame with dates and week identifiers
+# Here I create buffer composites, just like above.
 
-example_week_5 <- names(camp_weekly_rasters)[2]
+example_week_5 <- names(cbuff_weekly_rasters)[2]
 plot(cbuff_weekly_rasters[[example_week_5]],
      main = paste("Weekly Composite:", example_week_5))
 
@@ -264,12 +257,9 @@ plot(rasters_to_plot_2,
 
 ```
 
-```{r}
+```{r Grid of Rasters, echo=FALSE, message=FALSE, warning=FALSE}
+# In this section, I will create a grid of rasters that shows the treatment area and the buffer area for the Camp Fire data.
 
-# Create a raster list with files for what i want to display in the 3 x 3 grid
-# select the 9 weeks of visualization that i want to display 
-# bind together the buffer and camp for those 9 weeks 
-# then create the tmap for the list of combined rasters with the labels on them 
 fire_start <- as.Date("2018-11-08")
 
 # Define the 9 key weeks
@@ -277,7 +267,7 @@ target_weeks <- c(
   fire_start - months(6),
   fire_start - months(3),
   fire_start - weeks(1),
-  fire_start,                          # day of fire
+  fire_start, # day of fire
   fire_start + weeks(1),
   fire_start + weeks(2),
   fire_start + weeks(3),
@@ -289,10 +279,9 @@ target_weeks <- c(
 target_weeks <- floor_date(target_weeks, unit = "week", week_start = 1)
 target_weeks_str <- as.character(target_weeks)
 
-
-
 combined_weekly_rasters <- list()
 
+# Make a function that combines the treatment and buffer rasters for each week
 for (w in target_weeks_str) {
   buffer_r <- cbuff_weekly_rasters[[w]]
   camp_r <- camp_weekly_rasters[[w]]
@@ -306,11 +295,10 @@ for (w in target_weeks_str) {
 
 ```
 
-```{r echo=FALSE}
-library(tmap)
+```{r Tmap Visualization, message=FALSE, echo=FALSE}
+# In this section of code, I visualize the combined rasters using the tmap package. This allows for interactive visualization of the treatment and buffer areas over the specified weeks. However, the difference in buffer and raster scale makes the visualization not as effective as I would like. So in the following section, I try a different option.
 
 tmap_mode("view")
-
 
 plot_list <- lapply(seq_along(combined_weekly_rasters), function(i) {
   week_name <- names(combined_weekly_rasters)[i]
@@ -326,9 +314,11 @@ plot_list <- lapply(seq_along(combined_weekly_rasters), function(i) {
 tmap_arrange(grobs = plot_list, ncol = 3, nrow = 3)
 
 ```
-```{r}
+```{r Final Visualization, echo=FALSE, message=FALSE, warning=FALSE}
 
+# In this section, I create a final visualization of the treatment and buffer areas for the Camp Fire data. I select three key weeks: 6 months before the fire, the week of the fire, and 1 year after the fire. This allows for a clear comparison of the treatment area and buffer area over time.
 
+# Define the target weeks for visualization
 treatment_weekly_rasters <- list()
 buffer_weekly_rasters <- list()
 
@@ -337,9 +327,9 @@ for (w in target_weeks_str) {
   buffer_weekly_rasters[[w]] <- cbuff_weekly_rasters[[w]]
 }
 
-weeks <- target_weeks_str  # your 9-week vector
+weeks <- target_weeks_str  #  9-week vector
 
-# Define which 3 you want to use
+# The three weeks that I want to use
 pre_fire   <- weeks[1]  # 6 months before
 during_fire <- weeks[4]  # fire start week
 post_fire  <- weeks[9]  # 12 months after
@@ -360,8 +350,10 @@ buffer_stack <- rast(list(
 names(treatment_stack) <- c("Pre-Fire", "During Fire", "Post-Fire")
 names(buffer_stack) <- c("Pre-Fire", "During Fire", "Post-Fire")
 
+# Set up the plotting area
 par(mfrow = c(2, 3))
 
+# Plot the treatment and buffer stacks
 plot(treatment_stack[[1]], main = "Treatment: 6 Months Before Fire")
 plot(treatment_stack[[2]], main = "Treatment: During Fire")
 plot(treatment_stack[[3]], main = "Treatment: 1 Year After Fire")

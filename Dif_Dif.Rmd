@@ -9,9 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r Load Libraries, message=FALSE, warning=FALSE}
 
-# load libraries
+# Load libraries
 library(tidyverse)
 library(ggplot2)
 library(ggdist)
@@ -22,28 +22,19 @@ library(tidyterra)
 library(lubridate)
 library(dplyr)
 library(tmap)
-library(dplyr)
 library(tools)
 library(utils)
 library(plotly)
 library(did)
-library(purrr)
 library(fect)
-
-camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
-
-# Load in the camp fire csv
-df <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/ccombined.csv")
+library(purrr)
+library(tibble)
 
 ```
 
 
-```{r}
-library(terra)
-library(dplyr)
-library(purrr)
-library(lubridate)
-library(tibble)
+```{r Load Data, message=FALSE, warning=FALSE}
+# Set working directory
 
 # Load raster file paths
 camp_outputs <- list.files("~/Local/Dissertation/CampFire_TIFFs", full.names = TRUE)
@@ -55,7 +46,13 @@ cb.new_outputs <- list.files("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_2
 camp_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/Camp_DailyMeanLuminosity.csv")
 cbuff_csv <- read.csv("~/Local/Dissertation/NTL_Wildfire_Recovery/CBuff_DailyMeanLuminosity.csv")
 
-# Helper: Load and aggregate rasters
+```
+
+```{r Process Data, message=FALSE, warning=FALSE}
+# In this code section, I processed the raster data to prepare it for analysis.
+
+
+# Load and aggregate rasters
 load_rasters <- function(file_paths, prefix_to_remove) {
   rasters <- lapply(file_paths, function(path) {
     r <- rast(path)
@@ -81,7 +78,7 @@ get_week_df <- function(raster_list) {
 camp_weeks_df <- get_week_df(camp_data)
 cbuff_weeks_df <- get_week_df(cbuff_data)
 
-# Composite rasters weekly
+# Create composite rasters (weekly)
 composite_by_week <- function(week_df, raster_list) {
   week_df %>%
     group_by(week) %>%
@@ -97,7 +94,7 @@ composite_by_week <- function(week_df, raster_list) {
 camp_weekly_rasters <- composite_by_week(camp_weeks_df, camp_data)
 cbuff_weekly_rasters <- composite_by_week(cbuff_weeks_df, cbuff_data)
 
-# Helper: convert to list with metadata
+# Convert to list with metadata
 combine_data <- function(raster_list, unit_label) {
   lapply(names(raster_list), function(name) {
     list(
@@ -114,7 +111,7 @@ cb.combined_data <- combine_data(cbuff_weekly_rasters, "Control")
 # Combine both treatment and control
 total_combined_data <- c(c.combined_data, cb.combined_data)
 
-# Convert each raster to dataframe
+# Convert each raster to a dataframe
 raster_to_df <- function(entry) {
   df <- as.data.frame(entry$raster, xy = TRUE, cells = TRUE)
   if (nrow(df) == 0) return(NULL)
@@ -129,7 +126,7 @@ panel_pixel_data <- map_dfr(total_combined_data, raster_to_df)
 
 ```
 
-```{r}
+```{r Data Frame Creation, message=FALSE, warning=FALSE}
 df <- panel_pixel_data %>%
   rename(pixel_id = cell) %>%
   mutate(
@@ -144,33 +141,7 @@ df <- panel_pixel_data %>%
 ```
 
 
-```{r}
-
-csdid_model <- att_gt(
-  yname = "DNB_BRDF_Corrected_NTL",
-  tname = "time",
-  idname = "pixel_id",
-  gname = "G",  # 0 = never treated
-  data = df,
-  panel = FALSE,
-  est_method = "dr"
-)
-
-summary(csdid_model)
-
-
-
-# Optional: aggregate dynamic effects (event study-style)
-agg_effects <- aggte(att_results, type = "dynamic")
-summary(agg_effects)
-plot(agg_effects)
-
-
-```
-
-
-
-```{r}
+```{r FECT Model, message=FALSE, warning=FALSE}
 df_fect <- df %>%
   filter(!is.na(mean)) %>%
   mutate(
@@ -206,20 +177,15 @@ plot(fect_model, type = "gap") +
        title = "Estimated Average Treatment Effect of Camp Fire on NTL")
 
 print(fect_model)
-
-
-
-
-
 ```
 
-```{r}
-# make a log version to translate to elasticity 
+```{r Log Fect Model, message=FALSE, warning=FALSE}
+# In this section of code, I apply a log transformation to the NTL data and fit the model again.
 
-
+# Apply log transformation to the mean NTL values
 df_fect_clean$log_mean <- log(df_fect_clean$mean + 1)
 
-
+# Fit the model using log-transformed outcome
 fect_model_log <- fect(
   Y = "log_mean",
   D = "D",
@@ -238,7 +204,7 @@ print(fect_model_log)
 
 ```
 
-```{r}
+```{r Plot Log Fect Model, message=FALSE, warning=FALSE}
 
 plot(fect_model_log, type = "gap") +
   scale_y_continuous(limits = c(-0.5, 0.5)) +
@@ -246,14 +212,13 @@ plot(fect_model_log, type = "gap") +
        x = "Weeks Since Wildfire",
        title = "Estimated Average Treatment Effect of Camp Fire on Log(NTL)")
 
-
-
 ```
 
 
 
-```{r}
-# Now do an inverse hyperbolic sine model of this
+```{r Inverse Hyperbolic Sine Model, message=FALSE, warning=FALSE}
+# In the section of code below, I apply the inverse hyperbolic sine transformation to the NTL data and fit the model again.
+
 # Apply inverse hyperbolic sine transformation
 df_fect_clean$asinh_mean <- asinh(df_fect_clean$mean)
 
